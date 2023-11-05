@@ -1,17 +1,9 @@
 ﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.StaticFiles;
-using System;
-using System.Collections.Generic;
-using System.Data.SqlTypes;
 using System.IO.Compression;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 using System.Xml.Serialization;
 using tuFactura.utilitarios.Herramientas.Facturas.Iterfaces;
 using tuFactura.utilitarios.Modelos.DIAN;
-using tuFactura.utilitarios.Modelos.Factura;
 using static tuFactura.utilitarios.Modelos.DIAN.Attach;
 
 namespace tuFacturaXML.negocio.Facturas
