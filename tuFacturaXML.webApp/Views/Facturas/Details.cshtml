@@ -1,0 +1,76 @@
+﻿@using tuFactura.utilitarios.Modelos.DIAN;
+
+@model List<InvoiceType>
+
+@{
+    ViewData["Title"] = "Detalles de Factura";
+}
+
+<div class="container">
+
+@if(Model is null){
+    <h3>No hay datos que mostrar</h3>
+}
+else
+{
+    <div class="text-center">
+            <h1>Detalles de Facturas</h1>
+    </div>
+    
+    <form>
+        
+        @foreach(var factura in Model)
+        {
+            <h2>@factura.ID.Value</h2>
+            <div class="input-group input-group-sm mb-3">
+                <span class="input-group-text" id="inputGroup-sizing-sm">CUFE:</span>
+                <input type="text" class="form-control" aria-label="Sizing example input" aria-describedby="inputGroup-sizing-sm" value="@factura.UUID.Value" readonly>
+            </div>
+
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label for="receptor" class="form-label">Receptor:</label>
+                        <input type="text" class="form-control" id="receptor" disabled value="@factura.AccountingCustomerParty.Party.PartyName[0].Name.Value">
+                    </div>
+                    <div class="col-6">
+                        <label for="receptor" class="form-label">CC:</label>
+                        <input type="text" class="form-control" id="receptor" disabled value="@factura.AccountingCustomerParty.Party.PartyIdentification[0].ID.Value">
+                    </div>
+                </div>
+
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th scope="col">#</th>
+                            <th scope="col">SKU</th>
+                            <th scope="col">Descripcion</th>
+                            <th scope="col">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach(var producto in @factura.InvoiceLine)
+                    {                            
+                        <tr>
+                            <th scope="row">@producto.ID.Value</th>
+                            <td>@producto.Item.SellersItemIdentification.ID.Value</td>
+                            <td>@producto.Item.Description[0].Value</td>
+                            <td>$@producto.Price.PriceAmount.Value.ToString("##.##") @producto.Price.PriceAmount.currencyID</td>
+                        </tr>                        
+                    }
+                    </tbody>
+                </table>
+
+            <div class="input-group">
+                <span class="input-group-text">Notas</span>
+                <textarea class="form-control" aria-label="With textarea" readonly>
+                    @foreach(var nota in factura.Note)
+                    {
+                        @nota.Value
+                    }
+                </textarea>
+            </div>
+        }
+    </form>
+}
+
+</div>

@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using System.Text;
+using tuFacturaXML.negocio.Facturas;
 using tuFacturaXML.webApp.Models;
 
 namespace tuFacturaXML.webApp.Controllers
@@ -14,12 +15,8 @@ namespace tuFacturaXML.webApp.Controllers
             _logger = logger;
         }
 
-        public IActionResult Index(IFormFile file)
+        public IActionResult Index()
         {
-            if (file == null || file.Length == 0)
-            {
-                //throw new Exception("El archivo es nulo o está vacío.");
-            }
 
             return View();
         }
