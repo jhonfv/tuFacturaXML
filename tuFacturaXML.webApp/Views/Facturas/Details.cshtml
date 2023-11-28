@@ -52,7 +52,12 @@ else
                     {                            
                         <tr>
                             <th scope="row">@producto.ID.Value</th>
-                            <td>@producto.Item.SellersItemIdentification.ID.Value</td>
+                                @if(@producto.Item.SellersItemIdentification == null){
+                                    <td>@producto.Item.StandardItemIdentification.ID.Value</td>
+                                }else{
+                                    <td>@producto.Item.SellersItemIdentification.ID.Value</td>
+                                }
+                                
                             <td>@producto.Item.Description[0].Value</td>
                             <td>$@producto.Price.PriceAmount.Value.ToString("##.##") @producto.Price.PriceAmount.currencyID</td>
                         </tr>                        
