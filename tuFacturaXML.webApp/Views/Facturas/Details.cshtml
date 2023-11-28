@@ -34,7 +34,14 @@ else
                     </div>
                     <div class="col-6">
                         <label for="receptor" class="form-label">CC:</label>
-                        <input type="text" class="form-control" id="receptor" disabled value="@factura.AccountingCustomerParty.Party.PartyIdentification[0].ID.Value">
+                        @if (@factura.AccountingCustomerParty.Party.PartyIdentification == null)
+                        {
+                            <input type="text" class="form-control" id="receptor" disabled value="@factura.AccountingCustomerParty.Party.PartyLegalEntity[0].CompanyID.Value">
+                        }
+                        else
+                        {
+                            <input type="text" class="form-control" id="receptor" disabled value="@factura.AccountingCustomerParty.Party.PartyIdentification[0].ID.Value">
+                        }
                     </div>
                 </div>
 
