@@ -4,6 +4,7 @@ using System.Text;
 using System.Xml.Serialization;
 using tuFactura.utilitarios.Herramientas.Facturas.Iterfaces;
 using tuFactura.utilitarios.Modelos.DIAN;
+using tuFactura.utilitarios.Modelos.Factura;
 using static tuFactura.utilitarios.Modelos.DIAN.Attach;
 
 namespace tuFacturaXML.negocio.Facturas
@@ -19,38 +20,37 @@ namespace tuFacturaXML.negocio.Facturas
             _ProcesarZip = procesarZip;
         }
 
-        public async Task<List<InvoiceType>> procesarFacturaAsync(List<IFormFile> files)
+        public async Task<ResultadoProcesamiento> procesarFacturaAsync(List<IFormFile> files)
         {
-            var facturasXML = new List<InvoiceType>();
+            var resultado = new ResultadoProcesamiento();
+            
             foreach (var file in files)
             {
                 switch (Path.GetExtension(file.FileName).ToLower())
                 {
                     case ".zip":
-                        var facturas = ProcesarArchivoZip(file);
-                        foreach(var factura in facturas)
-                        {
-                            facturasXML.Add(ProcesarArchivoXML(factura));
-                        }
-
+                        resultado.EsArchivoZip = true;
+                        var resultadoZip = ProcesarArchivoZip(file);
+                        resultado.Facturas.AddRange(resultadoZip.Facturas);
+                        resultado.ArchivosAdjuntos.AddRange(resultadoZip.ArchivosAdjuntos);
                         break;
                     case ".xml":
                         using (var streamReader = new StreamReader(file.OpenReadStream(), Encoding.UTF8))
                         {
                             string xmlString = await streamReader.ReadToEndAsync();
-                            facturasXML.Add(ProcesarArchivoXML(xmlString));
+                            resultado.Facturas.Add(ProcesarArchivoXML(xmlString));
                         }                        
                         break;
                 }
             }
 
-            return facturasXML;
+            return resultado;
         }
 
-        private List<string> ProcesarArchivoZip(IFormFile fileZip)
+        private ResultadoProcesamiento ProcesarArchivoZip(IFormFile fileZip)
         {
+            var resultado = new ResultadoProcesamiento { EsArchivoZip = true };
             var zipBytes = _FileTools.ConvertirIFormFileABytes(fileZip);
-            var result = new List<string>();
 
             using (var stream = new MemoryStream(zipBytes))
             {
@@ -58,20 +58,57 @@ namespace tuFacturaXML.negocio.Facturas
                 {
                     foreach (var entry in archive.Entries)
                     {
-                        // Verifica si el archivo tiene la extensión .xml
-                        if (entry.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                        if (!string.IsNullOrEmpty(entry.Name))
                         {
                             using (var entryStream = entry.Open())
-                            using (var reader = new StreamReader(entryStream))
+                            using (var ms = new MemoryStream())
                             {
-                                string contenidoXML = reader.ReadToEnd();
-                                result.Add(contenidoXML);
+                                entryStream.CopyTo(ms);
+                                var contenido = ms.ToArray();
+
+                                if (entry.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Procesar XML
+                                    string xmlString = Encoding.UTF8.GetString(contenido);
+                                    resultado.Facturas.Add(ProcesarArchivoXML(xmlString));
+                                }
+                                else
+                                {
+                                    // Agregar como archivo adjunto
+                                    var archivoAdjunto = new ArchivoAdjunto
+                                    {
+                                        Nombre = entry.Name,
+                                        Extension = Path.GetExtension(entry.Name).ToLower(),
+                                        Contenido = contenido,
+                                        TipoMime = ObtenerTipoMime(entry.Name),
+                                        Tamaño = entry.Length
+                                    };
+                                    resultado.ArchivosAdjuntos.Add(archivoAdjunto);
+                                }
                             }
                         }
                     }
                 }
             }
-            return result;
+            return resultado;
+        }
+
+        private string ObtenerTipoMime(string nombreArchivo)
+        {
+            var extension = Path.GetExtension(nombreArchivo).ToLower();
+            return extension switch
+            {
+                ".pdf" => "application/pdf",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".txt" => "text/plain",
+                ".doc" => "application/msword",
+                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ".xls" => "application/vnd.ms-excel",
+                ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                _ => "application/octet-stream"
+            };
         }
 
         private InvoiceType ProcesarArchivoXML(string xmlString)
@@ -104,6 +141,5 @@ namespace tuFacturaXML.negocio.Facturas
 
             return factura;
         }
-
     }
 }
