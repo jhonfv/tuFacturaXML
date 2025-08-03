@@ -1,0 +1,248 @@
+@{
+    ViewData["Title"] = "Cargar Facturas";
+}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-file-upload me-2"></i>
+                        Cargar Facturas XML
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="upload-area" id="uploadArea">
+                                <div class="upload-content">
+                                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                                    <h5 class="text-muted">Arrastra y suelta archivos aquí</h5>
+                                    <p class="text-muted">o</p>
+                                    <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('fileInput').click()">
+                                        <i class="fas fa-folder-open me-2"></i>
+                                        Seleccionar Archivos
+                                    </button>
+                                    <p class="text-muted mt-2 small">
+                                        Formatos soportados: .xml, .zip
+                                    </p>
+                                </div>
+                                <input type="file" id="fileInput" multiple accept=".xml,.zip" style="display: none;" />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        Información
+                                    </h6>
+                                    <ul class="list-unstyled small">
+                                        <li><i class="fas fa-check text-success me-2"></i>Procesa facturas XML de DIAN</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Soporta archivos ZIP con múltiples facturas</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Extrae información automáticamente</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Genera entradas de mercancía</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="fileList" class="mt-4" style="display: none;">
+                        <h6>Archivos seleccionados:</h6>
+                        <div id="fileItems"></div>
+                    </div>
+
+                    <div class="mt-4">
+                        <form id="uploadForm" asp-action="CargarFactura" method="post" enctype="multipart/form-data">
+                            <div id="formFiles"></div>
+                            <button type="submit" id="submitBtn" class="btn btn-primary" style="display: none;">
+                                <i class="fas fa-upload me-2"></i>
+                                Procesar Facturas
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .upload-area {
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        padding: 40px;
+        text-align: center;
+        transition: all 0.3s ease;
+        background-color: #f8f9fa;
+    }
+
+    .upload-area.dragover {
+        border-color: #007bff;
+        background-color: #e3f2fd;
+    }
+
+    .upload-area:hover {
+        border-color: #007bff;
+        background-color: #f8f9fa;
+    }
+
+    .file-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px;
+        margin: 5px 0;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+        border: 1px solid #dee2e6;
+    }
+
+    .file-item .file-info {
+        display: flex;
+        align-items: center;
+    }
+
+    .file-item .file-name {
+        margin-left: 10px;
+        font-weight: 500;
+    }
+
+    .file-item .file-size {
+        color: #6c757d;
+        font-size: 0.875rem;
+    }
+
+    .remove-file {
+        color: #dc3545;
+        cursor: pointer;
+        padding: 5px;
+    }
+
+    .remove-file:hover {
+        color: #c82333;
+    }
+</style>
+
+<script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const fileItems = document.getElementById('fileItems');
+    const formFiles = document.getElementById('formFiles');
+    const submitBtn = document.getElementById('submitBtn');
+    const uploadForm = document.getElementById('uploadForm');
+
+    let selectedFiles = [];
+
+    // Drag and drop events
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        const files = Array.from(e.dataTransfer.files);
+        handleFiles(files);
+    });
+
+    // File input change
+    fileInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        handleFiles(files);
+    });
+
+    function handleFiles(files) {
+        const validFiles = files.filter(file => {
+            const extension = file.name.toLowerCase().split('.').pop();
+            return extension === 'xml' || extension === 'zip';
+        });
+
+        if (validFiles.length === 0) {
+            alert('Por favor, selecciona solo archivos XML o ZIP.');
+            return;
+        }
+
+        selectedFiles = [...selectedFiles, ...validFiles];
+        updateFileList();
+        updateForm();
+    }
+
+    function updateFileList() {
+        if (selectedFiles.length === 0) {
+            fileList.style.display = 'none';
+            submitBtn.style.display = 'none';
+            return;
+        }
+
+        fileList.style.display = 'block';
+        submitBtn.style.display = 'block';
+
+        fileItems.innerHTML = '';
+        selectedFiles.forEach((file, index) => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.innerHTML = `
+                <div class="file-info">
+                    <i class="fas fa-file-${file.name.toLowerCase().endsWith('.xml') ? 'code' : 'archive'} text-primary"></i>
+                    <span class="file-name">${file.name}</span>
+                    <span class="file-size">(${formatFileSize(file.size)})</span>
+                </div>
+                <i class="fas fa-times remove-file" onclick="removeFile(${index})"></i>
+            `;
+            fileItems.appendChild(fileItem);
+        });
+    }
+
+    function removeFile(index) {
+        selectedFiles.splice(index, 1);
+        updateFileList();
+        updateForm();
+    }
+
+    function updateForm() {
+        formFiles.innerHTML = '';
+        selectedFiles.forEach(file => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.name = 'files';
+            input.style.display = 'none';
+            
+            // Create a new FileList-like object
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            
+            formFiles.appendChild(input);
+        });
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Form submission
+    uploadForm.addEventListener('submit', (e) => {
+        if (selectedFiles.length === 0) {
+            e.preventDefault();
+            alert('Por favor, selecciona al menos un archivo.');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Procesando...';
+    });
+</script> 

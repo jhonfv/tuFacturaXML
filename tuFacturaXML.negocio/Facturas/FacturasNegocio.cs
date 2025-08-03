@@ -113,33 +113,65 @@ namespace tuFacturaXML.negocio.Facturas
 
         private InvoiceType ProcesarArchivoXML(string xmlString)
         {
-            var attachedDocument = new AttachedDocumentType();
-            XmlSerializer serializer = new XmlSerializer(typeof(AttachedDocumentType));
-            InvoiceType factura = new InvoiceType();
-            string invoice = string.Empty;
-            byte[] invoiceArray = null;
-            Stream invoiceStream = null;
-
-            using (StringReader stringReader = new StringReader(xmlString))
+            try
             {
-                var data = serializer.Deserialize(stringReader);
-                if(data != null)
-                    attachedDocument = (AttachedDocumentType)data;
+                // Primero intentar deserializar directamente como InvoiceType
+                XmlSerializer invoiceSerializer = new XmlSerializer(typeof(InvoiceType));
+                using (StringReader stringReader = new StringReader(xmlString))
+                {
+                    var invoiceObject = invoiceSerializer.Deserialize(stringReader);
+                    if (invoiceObject != null)
+                    {
+                        return (InvoiceType)invoiceObject;
+                    }
+                }
+            }
+            catch
+            {
+                // Si falla, intentar como AttachedDocumentType
+                try
+                {
+                    var attachedDocument = new AttachedDocumentType();
+                    XmlSerializer attachedSerializer = new XmlSerializer(typeof(AttachedDocumentType));
+                    string invoice = string.Empty;
 
-                if(attachedDocument != null)
-                    invoice = attachedDocument.Attachment.ExternalReference.Description[0].Value;
+                    using (StringReader stringReader = new StringReader(xmlString))
+                    {
+                        var data = attachedSerializer.Deserialize(stringReader);
+                        if (data != null)
+                        {
+                            attachedDocument = (AttachedDocumentType)data;
+
+                            if (attachedDocument?.Attachment?.ExternalReference?.Description != null && 
+                                attachedDocument.Attachment.ExternalReference.Description.Length > 0)
+                            {
+                                invoice = attachedDocument.Attachment.ExternalReference.Description[0].Value;
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(invoice))
+                    {
+                        byte[] invoiceArray = Encoding.ASCII.GetBytes(invoice);
+                        using (var invoiceStream = new MemoryStream(invoiceArray))
+                        {
+                            XmlSerializer invoiceSerializer = new XmlSerializer(typeof(InvoiceType));
+                            var invoiceObject = invoiceSerializer.Deserialize(invoiceStream);
+                            
+                            if (invoiceObject != null)
+                            {
+                                return (InvoiceType)invoiceObject;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"No se pudo procesar el archivo XML: {ex.Message}");
+                }
             }
 
-            invoiceArray = Encoding.ASCII.GetBytes(invoice);
-            invoiceStream = new MemoryStream(invoiceArray);
-
-            serializer = new XmlSerializer(typeof(InvoiceType));
-            var invoiceObject = serializer.Deserialize(invoiceStream);
-            
-            if (invoiceObject != null)
-                factura=(InvoiceType)invoiceObject;
-
-            return factura;
+            throw new InvalidOperationException("No se pudo deserializar el archivo XML como factura válida");
         }
     }
 }

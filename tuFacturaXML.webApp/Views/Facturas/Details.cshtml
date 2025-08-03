@@ -114,20 +114,29 @@
             </div>
         }
         
-        @foreach(var factura in Model.Facturas)
+        @foreach(var (factura, facturaIndex) in Model.Facturas.Select((f, i) => (f, i)))
         {
             <div class="invoice-card mb-3">
                 <!-- Invoice Header -->
                 <div class="invoice-header">
                     <div class="row align-items-center">
-                        <div class="col-md-8">
+                        <div class="col-md-6">
                             <h6 class="mb-1">@factura.ID.Value</h6>
                             <small class="opacity-75">
                                 @(factura.IssueDate?.Value.ToString("dd/MM/yyyy") ?? "N/A")
                             </small>
                         </div>
-                        <div class="col-md-4 text-md-end">
-                            <span class="badge badge-success">Procesada</span>
+                        <div class="col-md-6 text-md-end">
+                            <div class="d-flex gap-2 justify-content-end">
+                                <span class="badge badge-success">Procesada</span>
+                                <form method="post" action="@Url.Action("ProcesarEntradaMercancia", "Facturas")" style="display: inline;">
+                                    <input type="hidden" name="facturaIndex" value="@facturaIndex" />
+                                    <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('¿Desea procesar esta factura como entrada de mercancía?')">
+                                        <i class="fas fa-truck me-1"></i>
+                                        Procesar Entrada
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -157,6 +166,42 @@
                                     @factura.AccountingCustomerParty.Party.PartyIdentification[0].ID.Value
                                 }
                             </span>
+                        </div>
+                    </div>
+
+                    <!-- Datos del Proveedor -->
+                    <div class="invoice-section">
+                        <div class="section-title">Datos del Proveedor</div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="data-row">
+                                    <span class="data-label">Proveedor:</span>
+                                    <span class="data-value">@factura.AccountingCustomerParty.Party.PartyName[0].Name.Value</span>
+                                </div>
+                                <div class="data-row">
+                                    <span class="data-label">Documento:</span>
+                                    <span class="data-value">@factura.ID.Value</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="data-row">
+                                    <span class="data-label">NIT/RUT:</span>
+                                    <span class="data-value">
+                                        @if (@factura.AccountingCustomerParty.Party.PartyIdentification == null)
+                                        {
+                                            @factura.AccountingCustomerParty.Party.PartyLegalEntity[0].CompanyID.Value
+                                        }
+                                        else
+                                        {
+                                            @factura.AccountingCustomerParty.Party.PartyIdentification[0].ID.Value
+                                        }
+                                    </span>
+                                </div>
+                                <div class="data-row">
+                                    <span class="data-label">Fecha:</span>
+                                    <span class="data-value">@(factura.IssueDate?.Value.ToString("dd/MM/yyyy") ?? "N/A")</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -197,13 +242,12 @@
                                                     {                            
                                                         <tr>
                                                             <td>
-                                                                <code>
-                                                                    @if(@producto.Item.SellersItemIdentification == null){
-                                                                        @producto.Item.StandardItemIdentification.ID.Value
-                                                                    }else{
-                                                                        @producto.Item.SellersItemIdentification.ID.Value
-                                                                    }
-                                                                </code>
+                                                                <input type="text" 
+                                                                       class="form-control form-control-sm sku-input" 
+                                                                       value="@(producto.Item.SellersItemIdentification == null ? producto.Item.StandardItemIdentification.ID.Value : producto.Item.SellersItemIdentification.ID.Value)"
+                                                                       data-original-sku="@(producto.Item.SellersItemIdentification == null ? producto.Item.StandardItemIdentification.ID.Value : producto.Item.SellersItemIdentification.ID.Value)"
+                                                                       placeholder="SKU del producto"
+                                                                       style="font-family: monospace; font-size: 0.875rem; min-width: 80px; max-width: 120px;">
                                                             </td>
                                                             <td>@producto.Item.Description[0].Value</td>
                                                             <td class="text-end">
@@ -238,23 +282,12 @@
                                                                 }
                                                             </td>
                                                             <td class="text-end">
-                                                                @if(producto.AllowanceCharge != null && producto.AllowanceCharge.Length > 0)
-                                                                {
-                                                                    var descuento = producto.AllowanceCharge.FirstOrDefault(ac => ac.ChargeIndicator?.Value == false);
-                                                                    if(descuento != null)
-                                                                    {
-                                                                        <strong class="text-danger">-$@descuento.Amount.Value.ToString("N2")</strong>
-                                                                        <small class="text-muted">@descuento.Amount.currencyID</small>
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <span class="text-muted">-</span>
-                                                                    }
-                                                                }
-                                                                else
-                                                                {
-                                                                    <span class="text-muted">-</span>
-                                                                }
+                                                                <input type="text" 
+                                                                       class="form-control form-control-sm descuento-input" 
+                                                                       value="@(producto.AllowanceCharge != null && producto.AllowanceCharge.Length > 0 ? producto.AllowanceCharge.FirstOrDefault(ac => ac.ChargeIndicator?.Value == false)?.Amount?.Value.ToString("C2") : "$0.00")"
+                                                                       data-original-descuento="@(producto.AllowanceCharge != null && producto.AllowanceCharge.Length > 0 ? producto.AllowanceCharge.FirstOrDefault(ac => ac.ChargeIndicator?.Value == false)?.Amount?.Value.ToString("N2") : "0.00")"
+                                                                       placeholder="$0.00"
+                                                                       style="font-family: monospace; font-size: 0.875rem; min-width: 70px; max-width: 100px; text-align: right;">
                                                             </td>
                                                             <td class="text-end">
                                                                 @if(producto.LineExtensionAmount != null)
@@ -498,152 +531,7 @@
                 </div>
             </div>
         }
-        <!-- Mapeo de Datos XML a Formulario -->
-        @if(Model.Facturas.Any())
-        {
-            <div class="row mb-4">
-                <div class="col-12">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0">
-                                <i class="fas fa-exchange-alt me-2"></i>
-                                Mapeo de Datos para Entrada de Mercancía
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <h6 class="text-primary mb-3">Datos del Proveedor</h6>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">Tipo:</label>
-                                        <input type="text" class="form-control" value="FACTURA" readonly>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">Proveedor:</label>
-                                        <input type="text" class="form-control" id="proveedorInput" 
-                                               value="@Model.Facturas.First().AccountingCustomerParty.Party.PartyName[0].Name.Value">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">Documento:</label>
-                                        <input type="text" class="form-control" id="documentoInput" 
-                                               value="@Model.Facturas.First().ID.Value">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">NIT/RUT:</label>
-                                        <input type="text" class="form-control" id="nitInput" 
-                                               value="@(Model.Facturas.First().AccountingCustomerParty.Party.PartyIdentification?.FirstOrDefault()?.ID.Value ?? Model.Facturas.First().AccountingCustomerParty.Party.PartyLegalEntity[0].CompanyID.Value)">
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <h6 class="text-primary mb-3">Fechas y Ubicación</h6>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">F. Dcto:</label>
-                                        <input type="date" class="form-control" id="fechaDocumentoInput" 
-                                               value="@Model.Facturas.First().IssueDate?.Value.ToString("yyyy-MM-dd")">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">F. Vence:</label>
-                                        <input type="date" class="form-control" id="fechaVencimientoInput" 
-                                               value="@Model.Facturas.First().DueDate?.Value.ToString("yyyy-MM-dd")">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">Bodega:</label>
-                                        <input type="text" class="form-control" id="bodegaInput" placeholder="Seleccionar bodega">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">Vendedor:</label>
-                                        <input type="text" class="form-control" id="vendedorInput" placeholder="Nombre del vendedor">
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Tabla de Productos Mapeados -->
-                            <div class="mt-4">
-                                <h6 class="text-primary mb-3">Productos Mapeados</h6>
-                                <div class="table-responsive">
-                                    <table class="table table-striped table-hover table-compact">
-                                        <thead class="table-dark">
-                                            <tr>
-                                                <th class="text-center">ITEM</th>
-                                                <th class="text-start">CODIGO</th>
-                                                <th class="text-start">NOMBRE DEL PRODUCTO</th>
-                                                <th class="text-center">EMB</th>
-                                                <th class="text-end">BASE</th>
-                                                <th class="text-end">P. DTO</th>
-                                                <th class="text-center">%</th>
-                                                <th class="text-center">ORDEN</th>
-                                                <th class="text-end">CAJAS</th>
-                                                <th class="text-end">UNID</th>
-                                                <th class="text-end">TOTAL</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="productosTableBody">
-                                            @foreach(var (producto, index) in Model.Facturas.First().InvoiceLine.Select((p, i) => (p, i)))
-                                            {
-                                                <tr>
-                                                    <td>@(index + 1)</td>
-                                                    <td>
-                                                        <code>@(producto.Item.SellersItemIdentification?.ID.Value ?? producto.Item.StandardItemIdentification?.ID.Value)</code>
-                                                    </td>
-                                                    <td>@producto.Item.Description[0].Value</td>
-                                                    <td>
-                                                        <input type="text" class="form-control form-control-sm" placeholder="EMB" 
-                                                               data-producto-id="@index" data-campo="emb">
-                                                    </td>
-                                                    <td>
-                                                        <input type="number" class="form-control form-control-sm" placeholder="0" 
-                                                               data-producto-id="@index" data-campo="base">
-                                                    </td>
-                                                    <td>
-                                                        <input type="number" class="form-control form-control-sm" placeholder="0" 
-                                                               data-producto-id="@index" data-campo="precio">
-                                                    </td>
-                                                    <td>
-                                                        <input type="number" class="form-control form-control-sm" placeholder="0" 
-                                                               data-producto-id="@index" data-campo="porcentaje">
-                                                    </td>
-                                                    <td>
-                                                        <input type="number" class="form-control form-control-sm" placeholder="0" 
-                                                               data-producto-id="@index" data-campo="orden">
-                                                    </td>
-                                                    <td>
-                                                        <input type="number" class="form-control form-control-sm" placeholder="0" 
-                                                               data-producto-id="@index" data-campo="cajas">
-                                                    </td>
-                                                    <td>
-                                                        <input type="number" class="form-control form-control-sm" placeholder="0" 
-                                                               data-producto-id="@index" data-campo="unidades">
-                                                    </td>
-                                                    <td>
-                                                        <span class="fw-bold total-producto" data-producto-id="@index">$0.00</span>
-                                                    </td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            
-                            <!-- Botones de Acción -->
-                            <div class="mt-4 text-center">
-                                <button type="button" class="btn btn-success me-2" onclick="copiarDatosAlFormulario()">
-                                    <i class="fas fa-copy me-2"></i>
-                                    Copiar Datos al Formulario
-                                </button>
-                                <button type="button" class="btn btn-primary me-2" onclick="exportarDatos()">
-                                    <i class="fas fa-file-export me-2"></i>
-                                    Exportar Datos
-                                </button>
-                                <button type="button" class="btn btn-info" onclick="limpiarDatos()">
-                                    <i class="fas fa-eraser me-2"></i>
-                                    Limpiar Datos
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        }
+        
     }
 </div>
 
@@ -797,149 +685,7 @@
                     }
                 }
             }
-            
-            // Configurar eventos para calcular totales
-            configurarCalculoTotal();
         });
-
-        // Funciones para mapeo de datos
-        function configurarCalculoTotal() {
-            const inputs = document.querySelectorAll('input[data-campo]');
-            inputs.forEach(input => {
-                input.addEventListener('input', calcularTotalProducto);
-            });
-        }
-
-        function calcularTotalProducto() {
-            const productoId = this.getAttribute('data-producto-id');
-            const precio = parseFloat(document.querySelector(`input[data-producto-id="${productoId}"][data-campo="precio"]`).value) || 0;
-            const cajas = parseFloat(document.querySelector(`input[data-producto-id="${productoId}"][data-campo="cajas"]`).value) || 0;
-            const unidades = parseFloat(document.querySelector(`input[data-producto-id="${productoId}"][data-campo="unidades"]`).value) || 0;
-            
-            const total = precio * (cajas + unidades);
-            document.querySelector(`.total-producto[data-producto-id="${productoId}"]`).textContent = `$${total.toFixed(2)}`;
-        }
-
-        function copiarDatosAlFormulario() {
-            // Recopilar datos del formulario
-            const datos = {
-                proveedor: document.getElementById('proveedorInput').value,
-                documento: document.getElementById('documentoInput').value,
-                nit: document.getElementById('nitInput').value,
-                fechaDocumento: document.getElementById('fechaDocumentoInput').value,
-                fechaVencimiento: document.getElementById('fechaVencimientoInput').value,
-                bodega: document.getElementById('bodegaInput').value,
-                vendedor: document.getElementById('vendedorInput').value,
-                productos: []
-            };
-
-            // Recopilar datos de productos
-            const filas = document.querySelectorAll('#productosTableBody tr');
-            filas.forEach((fila, index) => {
-                const producto = {
-                    item: index + 1,
-                    codigo: fila.querySelector('code').textContent,
-                    nombre: fila.querySelector('td:nth-child(3)').textContent,
-                    emb: fila.querySelector('input[data-campo="emb"]').value,
-                    base: fila.querySelector('input[data-campo="base"]').value,
-                    precio: fila.querySelector('input[data-campo="precio"]').value,
-                    porcentaje: fila.querySelector('input[data-campo="porcentaje"]').value,
-                    orden: fila.querySelector('input[data-campo="orden"]').value,
-                    cajas: fila.querySelector('input[data-campo="cajas"]').value,
-                    unidades: fila.querySelector('input[data-campo="unidades"]').value,
-                    total: fila.querySelector('.total-producto').textContent
-                };
-                datos.productos.push(producto);
-            });
-
-            // Guardar en localStorage para uso en el formulario principal
-            localStorage.setItem('datosEntradaMercancia', JSON.stringify(datos));
-            
-            // Mostrar mensaje de éxito
-            mostrarNotificacion('Datos copiados exitosamente', 'success');
-        }
-
-        function exportarDatos() {
-            const datos = {
-                proveedor: document.getElementById('proveedorInput').value,
-                documento: document.getElementById('documentoInput').value,
-                nit: document.getElementById('nitInput').value,
-                fechaDocumento: document.getElementById('fechaDocumentoInput').value,
-                fechaVencimiento: document.getElementById('fechaVencimientoInput').value,
-                bodega: document.getElementById('bodegaInput').value,
-                vendedor: document.getElementById('vendedorInput').value,
-                productos: []
-            };
-
-            // Recopilar productos
-            const filas = document.querySelectorAll('#productosTableBody tr');
-            filas.forEach((fila, index) => {
-                const producto = {
-                    item: index + 1,
-                    codigo: fila.querySelector('code').textContent,
-                    nombre: fila.querySelector('td:nth-child(3)').textContent,
-                    emb: fila.querySelector('input[data-campo="emb"]').value,
-                    base: fila.querySelector('input[data-campo="base"]').value,
-                    precio: fila.querySelector('input[data-campo="precio"]').value,
-                    porcentaje: fila.querySelector('input[data-campo="porcentaje"]').value,
-                    orden: fila.querySelector('input[data-campo="orden"]').value,
-                    cajas: fila.querySelector('input[data-campo="cajas"]').value,
-                    unidades: fila.querySelector('input[data-campo="unidades"]').value,
-                    total: fila.querySelector('.total-producto').textContent
-                };
-                datos.productos.push(producto);
-            });
-
-            // Crear archivo CSV
-            const csv = generarCSV(datos);
-            descargarArchivo(csv, 'datos_entrada_mercancia.csv', 'text/csv');
-            
-            mostrarNotificacion('Datos exportados exitosamente', 'success');
-        }
-
-        function generarCSV(datos) {
-            let csv = 'Proveedor,Documento,NIT,Fecha Documento,Fecha Vencimiento,Bodega,Vendedor\n';
-            csv += `${datos.proveedor},${datos.documento},${datos.nit},${datos.fechaDocumento},${datos.fechaVencimiento},${datos.bodega},${datos.vendedor}\n\n`;
-            csv += 'ITEM,CODIGO,NOMBRE,EMB,BASE,PRECIO,%,ORDEN,CAJAS,UNIDADES,TOTAL\n';
-            
-            datos.productos.forEach(producto => {
-                csv += `${producto.item},${producto.codigo},"${producto.nombre}",${producto.emb},${producto.base},${producto.precio},${producto.porcentaje},${producto.orden},${producto.cajas},${producto.unidades},${producto.total}\n`;
-            });
-            
-            return csv;
-        }
-
-        function descargarArchivo(contenido, nombre, tipo) {
-            const blob = new Blob([contenido], { type: tipo });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = nombre;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-        }
-
-        function limpiarDatos() {
-            // Limpiar inputs de productos
-            const inputs = document.querySelectorAll('input[data-campo]');
-            inputs.forEach(input => {
-                input.value = '';
-            });
-            
-            // Limpiar totales
-            const totales = document.querySelectorAll('.total-producto');
-            totales.forEach(total => {
-                total.textContent = '$0.00';
-            });
-            
-            // Limpiar campos principales
-            document.getElementById('bodegaInput').value = '';
-            document.getElementById('vendedorInput').value = '';
-            
-            mostrarNotificacion('Datos limpiados exitosamente', 'info');
-        }
 
         function mostrarNotificacion(mensaje, tipo) {
             // Crear notificación Bootstrap
@@ -960,5 +706,195 @@
                 }
             }, 3000);
         }
+
+        // Funcionalidad para edición de SKUs y Descuentos
+        document.addEventListener('DOMContentLoaded', function() {
+            const skuInputs = document.querySelectorAll('.sku-input');
+            const descuentoInputs = document.querySelectorAll('.descuento-input');
+            
+            // Función para calcular el ancho basado en el texto
+            function ajustarAnchoInput(input) {
+                const texto = input.value || input.placeholder;
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                context.font = '0.875rem monospace';
+                const anchoTexto = context.measureText(texto).width;
+                
+                // Agregar padding (izquierda + derecha) y un poco de espacio extra
+                const anchoTotal = anchoTexto + 20;
+                const anchoMinimo = 80;
+                const anchoMaximo = 120;
+                
+                input.style.width = Math.max(anchoMinimo, Math.min(anchoMaximo, anchoTotal)) + 'px';
+            }
+            
+            // Configurar inputs de SKU
+            skuInputs.forEach(input => {
+                // Ajustar ancho inicial
+                ajustarAnchoInput(input);
+                
+                // Ajustar ancho cuando cambie el contenido
+                input.addEventListener('input', function() {
+                    ajustarAnchoInput(this);
+                    
+                    const originalSku = this.getAttribute('data-original-sku');
+                    const currentValue = this.value.trim();
+                    
+                    if (currentValue !== originalSku) {
+                        this.classList.add('is-modified');
+                        this.style.backgroundColor = '#fff3cd';
+                        this.style.borderColor = '#ffc107';
+                    } else {
+                        this.classList.remove('is-modified');
+                        this.style.backgroundColor = '';
+                        this.style.borderColor = '';
+                    }
+                });
+
+                // Validar al perder el foco
+                input.addEventListener('blur', function() {
+                    const value = this.value.trim();
+                    
+                    if (value === '') {
+                        this.style.backgroundColor = '#f8d7da';
+                        this.style.borderColor = '#dc3545';
+                        mostrarNotificacion('El SKU no puede estar vacío', 'warning');
+                    } else if (value.length < 3) {
+                        this.style.backgroundColor = '#f8d7da';
+                        this.style.borderColor = '#dc3545';
+                        mostrarNotificacion('El SKU debe tener al menos 3 caracteres', 'warning');
+                    } else {
+                        // Restaurar estilo si es válido
+                        if (!this.classList.contains('is-modified')) {
+                            this.style.backgroundColor = '';
+                            this.style.borderColor = '';
+                        }
+                    }
+                });
+
+                // Permitir Enter para guardar
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        this.blur();
+                        mostrarNotificacion('SKU actualizado', 'success');
+                    }
+                });
+            });
+            
+            // Configurar inputs de Descuento con máscara de moneda
+            descuentoInputs.forEach(input => {
+                // Función para formatear a moneda
+                function formatearMoneda(valor) {
+                    const numero = parseFloat(valor) || 0;
+                    return numero.toLocaleString('es-CO', {
+                        style: 'currency',
+                        currency: 'COP',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    });
+                }
+                
+                // Función para extraer solo números del valor formateado
+                function extraerNumero(valor) {
+                    return parseFloat(valor.replace(/[^\d.-]/g, '')) || 0;
+                }
+                
+                // Función para ajustar ancho basado en el contenido
+                function ajustarAnchoMoneda(input) {
+                    const texto = input.value || input.placeholder;
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    context.font = '0.875rem monospace';
+                    const anchoTexto = context.measureText(texto).width;
+                    
+                    // Agregar padding y espacio extra
+                    const anchoTotal = anchoTexto + 25;
+                    const anchoMinimo = 70;
+                    const anchoMaximo = 120;
+                    
+                    input.style.width = Math.max(anchoMinimo, Math.min(anchoMaximo, anchoTotal)) + 'px';
+                }
+                
+                // Formatear valor inicial
+                const valorInicial = extraerNumero(input.value);
+                input.value = formatearMoneda(valorInicial);
+                ajustarAnchoMoneda(input);
+                
+                // Manejar entrada de texto
+                input.addEventListener('input', function(e) {
+                    let valor = this.value;
+                    
+                    // Permitir solo números, punto, coma y símbolos de moneda
+                    valor = valor.replace(/[^\d.,]/g, '');
+                    
+                    // Convertir coma a punto para cálculos
+                    valor = valor.replace(',', '.');
+                    
+                    // Limitar a 2 decimales
+                    if (valor.includes('.')) {
+                        const partes = valor.split('.');
+                        if (partes[1].length > 2) {
+                            valor = partes[0] + '.' + partes[1].substring(0, 2);
+                        }
+                    }
+                    
+                    // Convertir a número y formatear
+                    const numero = parseFloat(valor) || 0;
+                    this.value = formatearMoneda(numero);
+                    
+                    // Ajustar ancho
+                    ajustarAnchoMoneda(this);
+                    
+                    // Verificar si ha cambiado del valor original
+                    const originalDescuento = parseFloat(this.getAttribute('data-original-descuento')) || 0;
+                    
+                    if (Math.abs(numero - originalDescuento) > 0.01) {
+                        this.classList.add('is-modified');
+                        this.style.backgroundColor = '#fff3cd';
+                        this.style.borderColor = '#ffc107';
+                    } else {
+                        this.classList.remove('is-modified');
+                        this.style.backgroundColor = '';
+                        this.style.borderColor = '';
+                    }
+                });
+
+                // Validar y formatear al perder el foco
+                input.addEventListener('blur', function() {
+                    let numero = extraerNumero(this.value);
+                    
+                    // Validar que no sea negativo
+                    if (numero < 0) {
+                        numero = 0;
+                        this.style.backgroundColor = '#f8d7da';
+                        this.style.borderColor = '#dc3545';
+                        mostrarNotificacion('El descuento no puede ser negativo', 'warning');
+                    } else {
+                        // Restaurar estilo si es válido
+                        if (!this.classList.contains('is-modified')) {
+                            this.style.backgroundColor = '';
+                            this.style.borderColor = '';
+                        }
+                    }
+                    
+                    // Formatear a moneda
+                    this.value = formatearMoneda(numero);
+                    ajustarAnchoMoneda(this);
+                });
+
+                // Permitir Enter para guardar
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        this.blur();
+                        mostrarNotificacion('Descuento actualizado', 'success');
+                    }
+                });
+                
+                // Manejar foco para seleccionar todo el texto
+                input.addEventListener('focus', function() {
+                    this.select();
+                });
+            });
+        });
     </script>
 }

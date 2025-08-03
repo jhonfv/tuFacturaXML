@@ -1,19 +1,30 @@
+using tuFactura.utilitarios.Herramientas.Database;
+using tuFactura.utilitarios.Herramientas.Logging;
 using tuFactura.utilitarios.Herramientas.Facturas;
 using tuFactura.utilitarios.Herramientas.Facturas.Iterfaces;
+using tuFacturaXML.negocio.EntradaMercancia;
 using tuFacturaXML.negocio.Facturas;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Dependencias
-builder.Services.AddScoped<IConversiones, Conversiones>();
-builder.Services.AddScoped<IProcesarZip, ProcesarZIP>();
-builder.Services.AddScoped<IFacturasNegocio, FacturasNegocio>();
-
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 
+// Configurar logging
+builder.Services.AddSingleton<ILoggerService, FileLoggerService>();
+
+// Configurar servicios de negocio
+builder.Services.AddScoped<IFacturasNegocio, FacturasNegocio>();
+builder.Services.AddScoped<IEntradaMercanciaNegocio, EntradaMercanciaNegocio>();
+
+// Configurar servicios de utilidades
+builder.Services.AddScoped<IConversiones, Conversiones>();
+builder.Services.AddScoped<IProcesarZip, ProcesarZIP>();
+
+// Configurar servicios de base de datos
+builder.Services.AddScoped<IDatabaseService, SqlServerDatabaseService>();
+
 // Configurar sesiones
-builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30);
@@ -27,7 +38,6 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
@@ -36,13 +46,12 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-// Habilitar sesiones
-app.UseSession();
-
 app.UseAuthorization();
+
+app.UseSession();
 
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
+    pattern: "{controller=Facturas}/{action=Index}/{id?}");
 
 app.Run();

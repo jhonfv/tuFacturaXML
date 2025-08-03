@@ -1,7 +1,10 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using tuFacturaXML.negocio.Facturas;
+using tuFactura.utilitarios.Herramientas.Logging;
 using tuFactura.utilitarios.Modelos.Factura;
+using tuFactura.utilitarios.Modelos.DIAN;
+using tuFacturaXML.negocio.EntradaMercancia;
+using tuFacturaXML.negocio.Facturas;
 using System.Text.Json;
 
 namespace tuFacturaXML.webApp.Controllers.Facturas
@@ -9,11 +12,19 @@ namespace tuFacturaXML.webApp.Controllers.Facturas
     public class FacturasController : Controller
     {
         private readonly IFacturasNegocio _facturasNegocio;
-        private static readonly Dictionary<string, List<ArchivoAdjunto>> _archivosTemporales = new();
+        private readonly IEntradaMercanciaNegocio _entradaMercanciaNegocio;
+        private readonly ILoggerService _logger;
+        private static readonly Dictionary<int, ArchivoAdjunto> _archivosTemporales = new();
+        private static List<InvoiceType> _facturasTemporales = new();
 
-        public FacturasController(IFacturasNegocio facturasNegocio)
+        public FacturasController(
+            IFacturasNegocio facturasNegocio, 
+            IEntradaMercanciaNegocio entradaMercanciaNegocio,
+            ILoggerService logger)
         {
             _facturasNegocio = facturasNegocio;
+            _entradaMercanciaNegocio = entradaMercanciaNegocio;
+            _logger = logger;
         }
 
         // GET: FacturasController
@@ -23,127 +34,196 @@ namespace tuFacturaXML.webApp.Controllers.Facturas
         }
 
         [HttpPost]
-        public async Task<IActionResult> CargarFactura(List<IFormFile> file)
+        public async Task<IActionResult> CargarFactura(List<IFormFile> files)
         {
-            if (file == null || file.Count == 0)
+            try
             {
-                return View("Details", null);
+                _logger.LogInformation("Iniciando carga de facturas", new { FileCount = files?.Count ?? 0 });
+
+                if (files == null || !files.Any())
+                {
+                    _logger.LogWarning("No se proporcionaron archivos para cargar");
+                    TempData["Error"] = "Por favor, seleccione al menos un archivo.";
+                    return RedirectToAction("Index");
+                }
+
+                var resultado = await _facturasNegocio.procesarFacturaAsync(files);
+                
+                if (resultado.Facturas.Any())
+                {
+                    _logger.LogInformation("Facturas procesadas exitosamente", new { 
+                        FacturasCount = resultado.Facturas.Count,
+                        EsArchivoZip = resultado.EsArchivoZip,
+                        ArchivosAdjuntosCount = resultado.ArchivosAdjuntos.Count
+                    });
+
+                    // Guardar archivos adjuntos temporalmente
+                    if (resultado.EsArchivoZip && resultado.ArchivosAdjuntos.Any())
+                    {
+                        for (int i = 0; i < resultado.ArchivosAdjuntos.Count; i++)
+                        {
+                            _archivosTemporales[i] = resultado.ArchivosAdjuntos[i];
+                        }
+                    }
+
+                    // Guardar datos en Session
+                    HttpContext.Session.SetInt32("FacturasCount", resultado.Facturas.Count);
+                    HttpContext.Session.SetInt32("ArchivosAdjuntosCount", resultado.ArchivosAdjuntos.Count);
+                    HttpContext.Session.SetString("EsArchivoZip", resultado.EsArchivoZip.ToString());
+                    
+                    // Guardar las facturas en memoria estática temporalmente
+                    _facturasTemporales = resultado.Facturas;
+                    
+                    return RedirectToAction("Details");
+                }
+                else
+                {
+                    _logger.LogWarning("No se encontraron facturas válidas en los archivos");
+                    TempData["Error"] = "No se encontraron facturas válidas en los archivos proporcionados.";
+                    return RedirectToAction("Index");
+                }
             }
-            
-            var resultado = await _facturasNegocio.procesarFacturaAsync(file);
-            
-            // Guardar archivos adjuntos en memoria temporal
-            if (resultado.EsArchivoZip && resultado.ArchivosAdjuntos.Any())
+            catch (Exception ex)
             {
-                var sessionId = HttpContext.Session.Id ?? Guid.NewGuid().ToString();
-                _archivosTemporales[sessionId] = resultado.ArchivosAdjuntos;
-                HttpContext.Session.SetString("SessionId", sessionId);
+                _logger.LogError("Error al procesar facturas", ex);
+                TempData["Error"] = $"Error al procesar las facturas: {ex.Message}";
+                return RedirectToAction("Index");
             }
-            
-            return View("Details", resultado);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ProcesarEntradaMercancia(int facturaIndex)
+        {
+            try
+            {
+                if (_facturasTemporales == null || !_facturasTemporales.Any() || facturaIndex >= _facturasTemporales.Count)
+                {
+                    TempData["Error"] = "No se encontró la factura especificada.";
+                    return RedirectToAction("Details");
+                }
+
+                var factura = _facturasTemporales[facturaIndex];
+                _logger.LogInformation("Iniciando procesamiento de entrada de mercancía", new { 
+                    FacturaId = factura.ID?.Value,
+                    FacturaIndex = facturaIndex 
+                });
+
+                var resultadoEntrada = await _entradaMercanciaNegocio.ProcesarEntradaMercanciaAsync(factura);
+
+                if (resultadoEntrada.Exitoso)
+                {
+                    _logger.LogInformation("Entrada de mercancía procesada exitosamente", new { 
+                        EntradaId = resultadoEntrada.EntradaId,
+                        FacturaId = factura.ID?.Value 
+                    });
+
+                    TempData["Success"] = $"Entrada de mercancía creada exitosamente. ID: {resultadoEntrada.EntradaId}";
+                }
+                else
+                {
+                    _logger.LogError("Error al procesar entrada de mercancía", null, new { 
+                        FacturaId = factura.ID?.Value,
+                        Error = resultadoEntrada.Mensaje 
+                    });
+
+                    TempData["Error"] = $"Error al procesar entrada de mercancía: {resultadoEntrada.Mensaje}";
+                }
+
+                return RedirectToAction("Details");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Error al procesar entrada de mercancía", ex);
+                TempData["Error"] = $"Error al procesar entrada de mercancía: {ex.Message}";
+                return RedirectToAction("Details");
+            }
         }
 
         // GET: FacturasController/Details/5
         public ActionResult Details()
         {
-            return View();
+            var facturasCount = HttpContext.Session.GetInt32("FacturasCount");
+            if (!facturasCount.HasValue || facturasCount.Value == 0)
+            {
+                return RedirectToAction("Index");
+            }
+            
+            var resultado = new ResultadoProcesamiento
+            {
+                Facturas = _facturasTemporales,
+                EsArchivoZip = bool.Parse(HttpContext.Session.GetString("EsArchivoZip") ?? "false")
+            };
+            
+            return View(resultado);
         }
 
         // GET: Visualizar archivo adjunto
         [HttpGet]
-        public IActionResult VisualizarAdjunto(int index)
+        public IActionResult VisualizarAdjunto(int id)
         {
             try
             {
-                var sessionId = HttpContext.Session.GetString("SessionId");
-                
-                if (!string.IsNullOrEmpty(sessionId) && _archivosTemporales.TryGetValue(sessionId, out var archivos))
+                if (_archivosTemporales.TryGetValue(id, out var archivo))
                 {
-                    if (index >= 0 && index < archivos.Count)
-                    {
-                        var archivo = archivos[index];
-                        
-                        // Configurar headers específicos para PDFs
-                        if (archivo.Extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-                        {
-                            Response.Headers.Add("Content-Disposition", $"inline; filename=\"{archivo.Nombre}\"");
-                            Response.Headers.Add("X-Content-Type-Options", "nosniff");
-                            Response.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate");
-                            Response.Headers.Add("Pragma", "no-cache");
-                            Response.Headers.Add("Expires", "0");
-                        }
-                        else
-                        {
-                            // Para otros archivos, permitir descarga
-                            Response.Headers.Add("Content-Disposition", $"attachment; filename=\"{archivo.Nombre}\"");
-                        }
-                        
-                        return File(archivo.Contenido, archivo.TipoMime, archivo.Nombre);
-                    }
+                    _logger.LogInformation("Visualizando archivo adjunto", new { 
+                        ArchivoId = id, 
+                        Nombre = archivo.Nombre,
+                        Extension = archivo.Extension 
+                    });
+
+                    return File(archivo.Contenido, ObtenerMimeType(archivo.Extension), archivo.Nombre);
                 }
-                
-                // Si no encuentra el archivo, devolver un error más descriptivo
-                return NotFound($"Archivo no encontrado. Index: {index}, SessionId: {sessionId}, Archivos disponibles: {(_archivosTemporales.ContainsKey(sessionId ?? "") ? _archivosTemporales[sessionId ?? ""].Count : 0)}");
+
+                _logger.LogWarning("Archivo adjunto no encontrado", new { ArchivoId = id });
+                return NotFound();
             }
             catch (Exception ex)
             {
-                return BadRequest($"Error al procesar archivo: {ex.Message}");
+                _logger.LogError("Error al visualizar archivo adjunto", ex, new { ArchivoId = id });
+                return StatusCode(500, "Error al visualizar el archivo");
             }
         }
 
         // GET: Visualizar PDF inline específicamente
         [HttpGet]
-        public IActionResult VisualizarPDF(int index)
+        public IActionResult VisualizarPDF(int id)
         {
             try
             {
-                var sessionId = HttpContext.Session.GetString("SessionId");
-                Console.WriteLine($"VisualizarPDF - Index: {index}, SessionId: {sessionId}");
-                
-                if (!string.IsNullOrEmpty(sessionId) && _archivosTemporales.TryGetValue(sessionId, out var archivos))
+                if (_archivosTemporales.TryGetValue(id, out var archivo))
                 {
-                    Console.WriteLine($"Archivos encontrados: {archivos.Count}");
-                    
-                    if (index >= 0 && index < archivos.Count)
-                    {
-                        var archivo = archivos[index];
-                        Console.WriteLine($"Archivo: {archivo.Nombre}, Extension: {archivo.Extension}, Tamaño: {archivo.Contenido.Length}");
-                        
-                        if (archivo.Extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // Headers específicos para visualización inline de PDFs
-                            Response.Headers.Add("Content-Type", "application/pdf");
-                            Response.Headers.Add("Content-Disposition", "inline");
-                            Response.Headers.Add("Accept-Ranges", "bytes");
-                            Response.Headers.Add("Cache-Control", "public, max-age=0");
-                            Response.Headers.Add("X-Content-Type-Options", "nosniff");
-                            
-                            Console.WriteLine("Devolviendo PDF con headers inline");
-                            return File(archivo.Contenido, "application/pdf");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"El archivo no es un PDF: {archivo.Extension}");
-                            return BadRequest("El archivo no es un PDF");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Index fuera de rango: {index}, archivos disponibles: {archivos.Count}");
-                    }
+                    _logger.LogInformation("Visualizando PDF", new { 
+                        ArchivoId = id, 
+                        Nombre = archivo.Nombre 
+                    });
+
+                    return File(archivo.Contenido, "application/pdf", archivo.Nombre);
                 }
-                else
-                {
-                    Console.WriteLine($"No se encontraron archivos para SessionId: {sessionId}");
-                }
-                
-                return NotFound("PDF no encontrado");
+
+                _logger.LogWarning("PDF no encontrado", new { ArchivoId = id });
+                return NotFound();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error en VisualizarPDF: {ex.Message}");
-                return BadRequest($"Error al procesar PDF: {ex.Message}");
+                _logger.LogError("Error al visualizar PDF", ex, new { ArchivoId = id });
+                return StatusCode(500, "Error al visualizar el PDF");
             }
+        }
+
+        private string ObtenerMimeType(string extension)
+        {
+            return extension.ToLower() switch
+            {
+                ".pdf" => "application/pdf",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".bmp" => "image/bmp",
+                ".txt" => "text/plain",
+                ".xml" => "application/xml",
+                ".zip" => "application/zip",
+                _ => "application/octet-stream"
+            };
         }
     }
 }

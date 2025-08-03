@@ -1,4 +1,5 @@
 ﻿using tuFactura.utilitarios.Modelos.DIAN;
+using System.Text.Json.Serialization;
 
 namespace tuFactura.utilitarios.Modelos.Factura
 {
@@ -20,6 +21,13 @@ namespace tuFactura.utilitarios.Modelos.Factura
     {
         public List<InvoiceType> Facturas { get; set; } = new List<InvoiceType>();
         public List<ArchivoAdjunto> ArchivosAdjuntos { get; set; } = new List<ArchivoAdjunto>();
+        public bool EsArchivoZip { get; set; }
+    }
+
+    public class ResultadoProcesamientoDTO
+    {
+        public string FacturasJson { get; set; } = "";
+        public string ArchivosAdjuntosJson { get; set; } = "";
         public bool EsArchivoZip { get; set; }
     }
 }
