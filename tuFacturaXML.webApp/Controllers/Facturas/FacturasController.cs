@@ -5,7 +5,9 @@ using tuFactura.utilitarios.Modelos.Factura;
 using tuFactura.utilitarios.Modelos.DIAN;
 using tuFacturaXML.negocio.EntradaMercancia;
 using tuFacturaXML.negocio.Facturas;
+using tuFactura.utilitarios.Herramientas.Database;
 using System.Text.Json;
+using System.Linq;
 
 namespace tuFacturaXML.webApp.Controllers.Facturas
 {
@@ -14,17 +16,20 @@ namespace tuFacturaXML.webApp.Controllers.Facturas
         private readonly IFacturasNegocio _facturasNegocio;
         private readonly IEntradaMercanciaNegocio _entradaMercanciaNegocio;
         private readonly ILoggerService _logger;
+        private readonly IDatabaseService _databaseService;
         private static readonly Dictionary<int, ArchivoAdjunto> _archivosTemporales = new();
         private static List<InvoiceType> _facturasTemporales = new();
 
         public FacturasController(
             IFacturasNegocio facturasNegocio, 
             IEntradaMercanciaNegocio entradaMercanciaNegocio,
-            ILoggerService logger)
+            ILoggerService logger,
+            IDatabaseService databaseService)
         {
             _facturasNegocio = facturasNegocio;
             _entradaMercanciaNegocio = entradaMercanciaNegocio;
             _logger = logger;
+            _databaseService = databaseService;
         }
 
         // GET: FacturasController
@@ -140,7 +145,7 @@ namespace tuFacturaXML.webApp.Controllers.Facturas
         }
 
         // GET: FacturasController/Details/5
-        public ActionResult Details()
+        public async Task<ActionResult> Details()
         {
             var facturasCount = HttpContext.Session.GetInt32("FacturasCount");
             if (!facturasCount.HasValue || facturasCount.Value == 0)
@@ -153,8 +158,91 @@ namespace tuFacturaXML.webApp.Controllers.Facturas
                 Facturas = _facturasTemporales,
                 EsArchivoZip = bool.Parse(HttpContext.Session.GetString("EsArchivoZip") ?? "false")
             };
+
+            // Validar productos en la base de datos
+            if (resultado.Facturas != null && resultado.Facturas.Any())
+            {
+                try
+                {
+                    var skus = new List<string>();
+                    foreach (var factura in resultado.Facturas)
+                    {
+                        if (factura.InvoiceLine != null)
+                        {
+                            foreach (var linea in factura.InvoiceLine)
+                            {
+                                var sku = linea.Item?.SellersItemIdentification?.ID?.Value ?? 
+                                         linea.Item?.StandardItemIdentification?.ID?.Value ?? "";
+                                if (!string.IsNullOrEmpty(sku))
+                                {
+                                    skus.Add(sku);
+                                }
+                            }
+                        }
+                    }
+
+                    if (skus.Any())
+                    {
+                        var validaciones = await _databaseService.ValidarProductosAsync(skus);
+                        ViewBag.ValidacionesProductos = validaciones;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Error validating products", ex);
+                    // No interrumpir la visualización si falla la validación
+                }
+            }
             
             return View(resultado);
+        }
+
+        // POST: Validar productos
+        [HttpPost]
+        public async Task<IActionResult> ValidarProductos([FromBody] ValidacionProductosRequest request)
+        {
+            try
+            {
+                _logger.LogInformation("Iniciando validación de productos", new { 
+                    FacturaIndex = request.FacturaIndex,
+                    SkusCount = request.Skus?.Count ?? 0 
+                });
+
+                if (request.Skus == null || !request.Skus.Any())
+                {
+                    return BadRequest(new { error = "No se proporcionaron SKUs para validar" });
+                }
+
+                var validaciones = await _databaseService.ValidarProductosAsync(request.Skus);
+                
+                _logger.LogInformation("Validación de productos completada", new { 
+                    ValidacionesCount = validaciones.Count,
+                    ProductosEncontrados = validaciones.Count(v => v.ExisteEnBaseDeDatos)
+                });
+
+                // Convertir a formato JSON para el frontend
+                var resultado = validaciones.Select(v => new
+                {
+                    sku = v.SKU,
+                    descripcion = v.Descripcion,
+                    existeEnBaseDeDatos = v.ExisteEnBaseDeDatos,
+                    productoId = v.ProductoId,
+                    descripcionProducto = v.DescripcionProducto,
+                    referenciaProducto = v.ReferenciaProducto,
+                    esCodigoAlterno = v.EsCodigoAlterno,
+                    esPrincipal = v.EsPrincipal
+                }).ToList();
+
+                return Json(new { validaciones = resultado });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Error al validar productos", ex, new { 
+                    FacturaIndex = request.FacturaIndex,
+                    SkusCount = request.Skus?.Count ?? 0 
+                });
+                return StatusCode(500, new { error = "Error interno del servidor al validar productos" });
+            }
         }
 
         // GET: Visualizar archivo adjunto

@@ -30,4 +30,10 @@ namespace tuFactura.utilitarios.Modelos.Factura
         public string ArchivosAdjuntosJson { get; set; } = "";
         public bool EsArchivoZip { get; set; }
     }
+
+    public class ValidacionProductosRequest
+    {
+        public int FacturaIndex { get; set; }
+        public List<string> Skus { get; set; } = new List<string>();
+    }
 }

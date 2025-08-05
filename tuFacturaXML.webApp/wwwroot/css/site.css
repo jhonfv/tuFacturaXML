@@ -332,10 +332,10 @@ body {
 /* Data Display */
 .data-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border-color);
+  gap: 1rem;
 }
 
 .data-row:last-child {
@@ -346,12 +346,14 @@ body {
   font-weight: 500;
   color: var(--text-secondary);
   font-size: 0.875rem;
+  min-width: 80px;
+  flex-shrink: 0;
 }
 
 .data-value {
   font-weight: 600;
   color: var(--text-primary);
-  text-align: right;
+  flex: 1;
 }
 
 .data-value.code {
@@ -716,4 +718,27 @@ body {
 .btn-group-vertical .btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Estilos para productos no encontrados en BD */
+.table-danger {
+    background-color: rgba(220, 53, 69, 0.05) !important;
+}
+
+.table-danger:hover {
+    background-color: rgba(220, 53, 69, 0.1) !important;
+}
+
+.sku-input.border-danger {
+    border-color: #dc3545 !important;
+    background-color: rgba(220, 53, 69, 0.05);
+}
+
+.sku-input.border-danger:focus {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+
+.text-danger {
+    color: #dc3545 !important;
 }

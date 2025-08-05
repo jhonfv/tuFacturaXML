@@ -383,5 +383,301 @@ namespace tuFactura.utilitarios.Herramientas.Database
                 IvaFleteId = reader.IsDBNull("IvaFleteId") ? null : (byte?)reader.GetByte("IvaFleteId")
             };
         }
+
+        public async Task<List<ValidacionProducto>> ValidarProductosAsync(List<string> skus)
+        {
+            var resultados = new List<ValidacionProducto>();
+
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                foreach (var sku in skus)
+                {
+                    var validacion = new ValidacionProducto
+                    {
+                        SKU = sku,
+                        ExisteEnBaseDeDatos = false
+                    };
+
+                    // Primero buscar en Productos por Referencia
+                    var producto = await GetProductoByReferenciaAsync(sku);
+                    if (producto != null)
+                    {
+                        validacion.ExisteEnBaseDeDatos = true;
+                        validacion.ProductoId = producto.ProductoId;
+                        validacion.DescripcionProducto = producto.DescripcionLarga;
+                        validacion.ReferenciaProducto = producto.Referencia;
+                        validacion.EsCodigoAlterno = false;
+                        validacion.EsPrincipal = true;
+                    }
+                    else
+                    {
+                        // Si no se encuentra en Productos, buscar en ProductosAlternos
+                        var productoAlterno = await GetProductoAlternoByCodigoAsync(sku);
+                        if (productoAlterno != null)
+                        {
+                            validacion.ExisteEnBaseDeDatos = true;
+                            validacion.ProductoId = productoAlterno.ProductoId;
+                            validacion.EsCodigoAlterno = true;
+                            validacion.EsPrincipal = productoAlterno.Principal;
+
+                            // Obtener información del producto principal
+                            var productoPrincipal = await GetProductoByIdAsync(productoAlterno.ProductoId);
+                            if (productoPrincipal != null)
+                            {
+                                validacion.DescripcionProducto = productoPrincipal.DescripcionLarga;
+                                validacion.ReferenciaProducto = productoPrincipal.Referencia;
+                            }
+                        }
+                    }
+
+                    resultados.Add(validacion);
+                }
+
+                return resultados;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error validating products: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<Producto?> GetProductoByReferenciaAsync(string referencia)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT ProductoId, DescripcionLarga, DescripcionCorta, Referencia, 
+                           Embalaje, CasaComercialId, UnidadDeMedidaId, ProveedorId,
+                           Familia1Id, Familia2Id, Familia3Id, Familia4Id, Familia5Id,
+                           IvaCompraId, IvaVentaId, ImpoConsumo, Empaque, VenderXPeso,
+                           VenderXFraccion, NoManejaInventario, EsConjunto, TieneLote,
+                           TieneSerial, EsServicio, EsProduccion, EsConcesion, EsObsequio,
+                           PerteneceAsociacion, ProductoWeb, EsBolsa, EquipoId, UsuarioId,
+                           FechaDeSistema, Interno, ManoDeObra, EsAncheta, AplicaGrupoDeCosto,
+                           NoAplicaRedondeo, EsInsumo, TienePreciosxSucursal, TieneCostoxSucursal,
+                           CaracteristicasWeb
+                    FROM Productos 
+                    WHERE Referencia = @Referencia";
+
+                using var command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@Referencia", referencia);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    return new Producto
+                    {
+                        ProductoId = reader.GetInt32("ProductoId"),
+                        DescripcionLarga = reader.GetString("DescripcionLarga"),
+                        DescripcionCorta = reader.GetString("DescripcionCorta"),
+                        Referencia = reader.GetString("Referencia"),
+                        Embalaje = reader.GetDouble("Embalaje"),
+                        CasaComercialId = reader.IsDBNull("CasaComercialId") ? null : reader.GetInt16("CasaComercialId"),
+                        UnidadDeMedidaId = reader.GetByte("UnidadDeMedidaId"),
+                        ProveedorId = reader.GetInt32("ProveedorId"),
+                        Familia1Id = reader.GetInt16("Familia1Id"),
+                        Familia2Id = reader.IsDBNull("Familia2Id") ? null : reader.GetInt16("Familia2Id"),
+                        Familia3Id = reader.IsDBNull("Familia3Id") ? null : reader.GetInt16("Familia3Id"),
+                        Familia4Id = reader.IsDBNull("Familia4Id") ? null : reader.GetInt16("Familia4Id"),
+                        Familia5Id = reader.IsDBNull("Familia5Id") ? null : reader.GetInt16("Familia5Id"),
+                        IvaCompraId = reader.GetByte("IvaCompraId"),
+                        IvaVentaId = reader.GetByte("IvaVentaId"),
+                        ImpoConsumo = reader.GetDouble("ImpoConsumo"),
+                        Empaque = reader.GetDouble("Empaque"),
+                        VenderXPeso = reader.GetBoolean("VenderXPeso"),
+                        VenderXFraccion = reader.GetBoolean("VenderXFraccion"),
+                        NoManejaInventario = reader.GetBoolean("NoManejaInventario"),
+                        EsConjunto = reader.GetBoolean("EsConjunto"),
+                        TieneLote = reader.GetBoolean("TieneLote"),
+                        TieneSerial = reader.GetBoolean("TieneSerial"),
+                        EsServicio = reader.GetBoolean("EsServicio"),
+                        EsProduccion = reader.GetBoolean("EsProduccion"),
+                        EsConcesion = reader.GetBoolean("EsConcesion"),
+                        EsObsequio = reader.GetBoolean("EsObsequio"),
+                        PerteneceAsociacion = reader.GetBoolean("PerteneceAsociacion"),
+                        ProductoWeb = reader.GetBoolean("ProductoWeb"),
+                        EsBolsa = reader.GetBoolean("EsBolsa"),
+                        EquipoId = reader.GetInt16("EquipoId"),
+                        UsuarioId = reader.GetInt32("UsuarioId"),
+                        FechaDeSistema = reader.GetDateTime("FechaDeSistema"),
+                        Interno = reader.GetBoolean("Interno"),
+                        ManoDeObra = reader.GetDouble("ManoDeObra"),
+                        EsAncheta = reader.GetBoolean("EsAncheta"),
+                        AplicaGrupoDeCosto = reader.GetBoolean("AplicaGrupoDeCosto"),
+                        NoAplicaRedondeo = reader.GetBoolean("NoAplicaRedondeo"),
+                        EsInsumo = reader.GetBoolean("EsInsumo"),
+                        TienePreciosxSucursal = reader.IsDBNull("TienePreciosxSucursal") ? null : reader.GetBoolean("TienePreciosxSucursal"),
+                        TieneCostoxSucursal = reader.IsDBNull("TieneCostoxSucursal") ? null : reader.GetBoolean("TieneCostoxSucursal"),
+                        CaracteristicasWeb = reader.IsDBNull("CaracteristicasWeb") ? null : reader.GetString("CaracteristicasWeb")
+                    };
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error getting producto by referencia: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<ProductoAlterno?> GetProductoAlternoByCodigoAsync(string codigoAlterno)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT CodigoAlterno, ProductoId, Principal, Cantidad
+                    FROM ProductosAlternos 
+                    WHERE CodigoAlterno = @CodigoAlterno";
+
+                using var command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@CodigoAlterno", codigoAlterno);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    return new ProductoAlterno
+                    {
+                        CodigoAlterno = reader.GetString("CodigoAlterno"),
+                        ProductoId = reader.GetInt32("ProductoId"),
+                        Principal = reader.GetBoolean("Principal"),
+                        Cantidad = reader.GetDouble("Cantidad")
+                    };
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error getting producto alterno by codigo: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<List<ProductoAlterno>> GetProductosAlternosByProductoIdAsync(int productoId)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT CodigoAlterno, ProductoId, Principal, Cantidad
+                    FROM ProductosAlternos 
+                    WHERE ProductoId = @ProductoId";
+
+                using var command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@ProductoId", productoId);
+
+                var productosAlternos = new List<ProductoAlterno>();
+                using var reader = await command.ExecuteReaderAsync();
+                
+                while (await reader.ReadAsync())
+                {
+                    productosAlternos.Add(new ProductoAlterno
+                    {
+                        CodigoAlterno = reader.GetString("CodigoAlterno"),
+                        ProductoId = reader.GetInt32("ProductoId"),
+                        Principal = reader.GetBoolean("Principal"),
+                        Cantidad = reader.GetDouble("Cantidad")
+                    });
+                }
+
+                return productosAlternos;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error getting productos alternos by producto id: {ex.Message}", ex);
+            }
+        }
+
+        private async Task<Producto?> GetProductoByIdAsync(int productoId)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT ProductoId, DescripcionLarga, DescripcionCorta, Referencia, 
+                           Embalaje, CasaComercialId, UnidadDeMedidaId, ProveedorId,
+                           Familia1Id, Familia2Id, Familia3Id, Familia4Id, Familia5Id,
+                           IvaCompraId, IvaVentaId, ImpoConsumo, Empaque, VenderXPeso,
+                           VenderXFraccion, NoManejaInventario, EsConjunto, TieneLote,
+                           TieneSerial, EsServicio, EsProduccion, EsConcesion, EsObsequio,
+                           PerteneceAsociacion, ProductoWeb, EsBolsa, EquipoId, UsuarioId,
+                           FechaDeSistema, Interno, ManoDeObra, EsAncheta, AplicaGrupoDeCosto,
+                           NoAplicaRedondeo, EsInsumo, TienePreciosxSucursal, TieneCostoxSucursal,
+                           CaracteristicasWeb
+                    FROM Productos 
+                    WHERE ProductoId = @ProductoId";
+
+                using var command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@ProductoId", productoId);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    return new Producto
+                    {
+                        ProductoId = reader.GetInt32("ProductoId"),
+                        DescripcionLarga = reader.GetString("DescripcionLarga"),
+                        DescripcionCorta = reader.GetString("DescripcionCorta"),
+                        Referencia = reader.GetString("Referencia"),
+                        Embalaje = reader.GetDouble("Embalaje"),
+                        CasaComercialId = reader.IsDBNull("CasaComercialId") ? null : reader.GetInt16("CasaComercialId"),
+                        UnidadDeMedidaId = reader.GetByte("UnidadDeMedidaId"),
+                        ProveedorId = reader.GetInt32("ProveedorId"),
+                        Familia1Id = reader.GetInt16("Familia1Id"),
+                        Familia2Id = reader.IsDBNull("Familia2Id") ? null : reader.GetInt16("Familia2Id"),
+                        Familia3Id = reader.IsDBNull("Familia3Id") ? null : reader.GetInt16("Familia3Id"),
+                        Familia4Id = reader.IsDBNull("Familia4Id") ? null : reader.GetInt16("Familia4Id"),
+                        Familia5Id = reader.IsDBNull("Familia5Id") ? null : reader.GetInt16("Familia5Id"),
+                        IvaCompraId = reader.GetByte("IvaCompraId"),
+                        IvaVentaId = reader.GetByte("IvaVentaId"),
+                        ImpoConsumo = reader.GetDouble("ImpoConsumo"),
+                        Empaque = reader.GetDouble("Empaque"),
+                        VenderXPeso = reader.GetBoolean("VenderXPeso"),
+                        VenderXFraccion = reader.GetBoolean("VenderXFraccion"),
+                        NoManejaInventario = reader.GetBoolean("NoManejaInventario"),
+                        EsConjunto = reader.GetBoolean("EsConjunto"),
+                        TieneLote = reader.GetBoolean("TieneLote"),
+                        TieneSerial = reader.GetBoolean("TieneSerial"),
+                        EsServicio = reader.GetBoolean("EsServicio"),
+                        EsProduccion = reader.GetBoolean("EsProduccion"),
+                        EsConcesion = reader.GetBoolean("EsConcesion"),
+                        EsObsequio = reader.GetBoolean("EsObsequio"),
+                        PerteneceAsociacion = reader.GetBoolean("PerteneceAsociacion"),
+                        ProductoWeb = reader.GetBoolean("ProductoWeb"),
+                        EsBolsa = reader.GetBoolean("EsBolsa"),
+                        EquipoId = reader.GetInt16("EquipoId"),
+                        UsuarioId = reader.GetInt32("UsuarioId"),
+                        FechaDeSistema = reader.GetDateTime("FechaDeSistema"),
+                        Interno = reader.GetBoolean("Interno"),
+                        ManoDeObra = reader.GetDouble("ManoDeObra"),
+                        EsAncheta = reader.GetBoolean("EsAncheta"),
+                        AplicaGrupoDeCosto = reader.GetBoolean("AplicaGrupoDeCosto"),
+                        NoAplicaRedondeo = reader.GetBoolean("NoAplicaRedondeo"),
+                        EsInsumo = reader.GetBoolean("EsInsumo"),
+                        TienePreciosxSucursal = reader.IsDBNull("TienePreciosxSucursal") ? null : reader.GetBoolean("TienePreciosxSucursal"),
+                        TieneCostoxSucursal = reader.IsDBNull("TieneCostoxSucursal") ? null : reader.GetBoolean("TieneCostoxSucursal"),
+                        CaracteristicasWeb = reader.IsDBNull("CaracteristicasWeb") ? null : reader.GetString("CaracteristicasWeb")
+                    };
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error getting producto by id: {ex.Message}", ex);
+            }
+        }
     }
 } 

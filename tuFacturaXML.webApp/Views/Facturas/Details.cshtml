@@ -1,11 +1,45 @@
-﻿@using tuFactura.utilitarios.Modelos.DIAN;
+@using tuFactura.utilitarios.Modelos.DIAN;
 @using tuFactura.utilitarios.Modelos.Factura;
 
 @model ResultadoProcesamiento
 
 @{
+    // Función helper para obtener el SKU de un producto
+    string GetSku(tuFactura.utilitarios.Modelos.DIAN.InvoiceLineType producto)
+    {
+        return producto.Item?.SellersItemIdentification?.ID?.Value ?? 
+               producto.Item?.StandardItemIdentification?.ID?.Value ?? "";
+    }
+    
+    // Función helper para verificar si un SKU existe en la base de datos
+    bool SkuExisteEnBD(string sku)
+    {
+        var validaciones = ViewBag.ValidacionesProductos as List<tuFactura.utilitarios.Modelos.Factura.ValidacionProducto>;
+        if (validaciones != null)
+        {
+            return validaciones.Any(v => v.SKU == sku && v.ExisteEnBaseDeDatos);
+        }
+        return true; // Si no hay validaciones, asumir que existe
+    }
+    
+    // Función helper para obtener la información del producto de la BD
+    tuFactura.utilitarios.Modelos.Factura.ValidacionProducto? ObtenerInfoProductoBD(string sku)
+    {
+        var validaciones = ViewBag.ValidacionesProductos as List<tuFactura.utilitarios.Modelos.Factura.ValidacionProducto>;
+        if (validaciones != null)
+        {
+            return validaciones.FirstOrDefault(v => v.SKU == sku);
+        }
+        return null;
+    }
+}
+
+@{
     ViewData["Title"] = "Detalles de Facturas de Proveedores";
 }
+
+<!-- Anti-forgery token for AJAX requests -->
+@Html.AntiForgeryToken()
 
 <div class="container py-4">
     @if(Model is null){
@@ -39,7 +73,7 @@
                         <span class="badge badge-success">
                             @Model.Facturas.Count factura(s) de proveedor(es)
                         </span>
-                        @if(Model.EsArchivoZip && Model.ArchivosAdjuntos.Any())
+                        @if(Model.ArchivosAdjuntos != null && Model.ArchivosAdjuntos.Any())
                         {
                             <span class="badge badge-secondary">
                                 @Model.ArchivosAdjuntos.Count archivo(s) adjunto(s)
@@ -54,8 +88,8 @@
             </div>
         </div>
 
-        <!-- Archivos Adjuntos (solo para ZIP) -->
-        @if(Model.EsArchivoZip && Model.ArchivosAdjuntos.Any())
+        <!-- Archivos Adjuntos -->
+        @if(Model.ArchivosAdjuntos != null && Model.ArchivosAdjuntos.Any())
         {
             <div class="row mb-4">
                 <div class="col-12">
@@ -113,457 +147,302 @@
                 </div>
             </div>
         }
-        
-        @foreach(var (factura, facturaIndex) in Model.Facturas.Select((f, i) => (f, i)))
+
+        <!-- Detalles de Facturas -->
+        @for(int facturaIndex = 0; facturaIndex < Model.Facturas.Count; facturaIndex++)
         {
-            <div class="invoice-card mb-3">
-                <!-- Invoice Header -->
-                <div class="invoice-header">
-                    <div class="row align-items-center">
-                        <div class="col-md-6">
-                            <h6 class="mb-1">@factura.ID.Value</h6>
-                            <small class="opacity-75">
-                                @(factura.IssueDate?.Value.ToString("dd/MM/yyyy") ?? "N/A")
-                            </small>
-                        </div>
-                        <div class="col-md-6 text-md-end">
-                            <div class="d-flex gap-2 justify-content-end">
-                                <span class="badge badge-success">Procesada</span>
-                                <form method="post" action="@Url.Action("ProcesarEntradaMercancia", "Facturas")" style="display: inline;">
-                                    <input type="hidden" name="facturaIndex" value="@facturaIndex" />
-                                    <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('¿Desea procesar esta factura como entrada de mercancía?')">
-                                        <i class="fas fa-truck me-1"></i>
-                                        Procesar Entrada
+            var factura = Model.Facturas[facturaIndex];
+            var facturaId = factura.ID.Value.Replace(" ", "").Replace("-", "");
+            
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-file-invoice me-2"></i>
+                                    Factura #@(facturaIndex + 1)
+                                </h5>
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <span class="badge badge-success">Procesada</span>
+                                    <button type="button" class="btn btn-info btn-sm" onclick="validarProductos(@facturaIndex, '@facturaId')">
+                                        <i class="fas fa-search me-1"></i>
+                                        Validar Productos
                                     </button>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Invoice Body -->
-                <div class="invoice-body">
-                    <!-- Key Information -->
-                    <div class="invoice-section">
-                        <div class="section-title">Información del Proveedor</div>
-                        <div class="data-row">
-                            <span class="data-label">CUFE:</span>
-                            <span class="data-value code">@factura.UUID.Value</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">Proveedor:</span>
-                            <span class="data-value">@factura.AccountingCustomerParty.Party.PartyName[0].Name.Value</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">NIT/RUT:</span>
-                            <span class="data-value">
-                                @if (@factura.AccountingCustomerParty.Party.PartyIdentification == null)
-                                {
-                                    @factura.AccountingCustomerParty.Party.PartyLegalEntity[0].CompanyID.Value
-                                }
-                                else
-                                {
-                                    @factura.AccountingCustomerParty.Party.PartyIdentification[0].ID.Value
-                                }
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Datos del Proveedor -->
-                    <div class="invoice-section">
-                        <div class="section-title">Datos del Proveedor</div>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="data-row">
-                                    <span class="data-label">Proveedor:</span>
-                                    <span class="data-value">@factura.AccountingCustomerParty.Party.PartyName[0].Name.Value</span>
-                                </div>
-                                <div class="data-row">
-                                    <span class="data-label">Documento:</span>
-                                    <span class="data-value">@factura.ID.Value</span>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="data-row">
-                                    <span class="data-label">NIT/RUT:</span>
-                                    <span class="data-value">
-                                        @if (@factura.AccountingCustomerParty.Party.PartyIdentification == null)
-                                        {
-                                            @factura.AccountingCustomerParty.Party.PartyLegalEntity[0].CompanyID.Value
-                                        }
-                                        else
-                                        {
-                                            @factura.AccountingCustomerParty.Party.PartyIdentification[0].ID.Value
-                                        }
-                                    </span>
-                                </div>
-                                <div class="data-row">
-                                    <span class="data-label">Fecha:</span>
-                                    <span class="data-value">@(factura.IssueDate?.Value.ToString("dd/MM/yyyy") ?? "N/A")</span>
+                                    <form method="post" action="@Url.Action("ProcesarEntradaMercancia", "Facturas")" style="display: inline;">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="facturaIndex" value="@facturaIndex" />
+                                        <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('¿Desea procesar esta factura como entrada de mercancía?')">
+                                            <i class="fas fa-truck me-1"></i>
+                                            Procesar Entrada
+                                        </button>
+                                    </form>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <!-- Key Information -->
+                                <div class="col-md-4">
+                                    <div class="invoice-section">
+                                        <div class="section-title">Información General</div>
+                                        <div class="data-row">
+                                            <span class="data-label">CUFE:</span>
+                                            <span class="data-value code">@factura.UUID.Value</span>
+                                        </div>
+                                        <div class="data-row">
+                                            <span class="data-label">Documento:</span>
+                                            <span class="data-value">@factura.ID.Value</span>
+                                        </div>
+                                        <div class="data-row">
+                                            <span class="data-label">Fecha:</span>
+                                            <span class="data-value">@factura.IssueDate.Value.ToString("dd/MM/yyyy")</span>
+                                        </div>
+                                    </div>
+                                </div>
 
-                    <!-- Products - Collapsible -->
-                    <div class="invoice-section">
-                        <div class="accordion" id="productsAccordion@(factura.ID.Value.Replace(" ", "").Replace("-", ""))">
-                            <div class="accordion-item">
-                                <h2 class="accordion-header">
-                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
-                                            data-bs-target="#productsCollapse@(factura.ID.Value.Replace(" ", "").Replace("-", ""))" 
-                                            aria-expanded="false" aria-controls="productsCollapse@(factura.ID.Value.Replace(" ", "").Replace("-", ""))">
-                                        <i class="fas fa-boxes me-2"></i>
-                                        Productos/Servicios (@factura.InvoiceLine.Length)
-                                    </button>
-                                </h2>
-                                <div id="productsCollapse@(factura.ID.Value.Replace(" ", "").Replace("-", ""))" 
-                                     class="accordion-collapse collapse" 
-                                     data-bs-parent="#productsAccordion@(factura.ID.Value.Replace(" ", "").Replace("-", ""))">
-                                    <div class="accordion-body p-0">
-                                        <div class="table-responsive">
-                                            <table class="table table-compact mb-0">
-                                                <thead>
-                                                    <tr>
-                                                        <th class="text-start">SKU</th>
-                                                        <th class="text-start">Descripción</th>
-                                                        <th class="text-end">Cantidad</th>
-                                                        <th class="text-center">Unidad</th>
-                                                        <th class="text-end">Precio Unitario</th>
-                                                        <th class="text-end">Descuento</th>
-                                                        <th class="text-end">Valor con IVA</th>
-                                                        <th class="text-center">% de IVA</th>
-                                                        <th class="text-center">Otros Impuestos</th>
-                                                        <th class="text-end">Total</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach(var producto in @factura.InvoiceLine)
-                                                    {                            
-                                                        <tr>
-                                                            <td>
-                                                                <input type="text" 
-                                                                       class="form-control form-control-sm sku-input" 
-                                                                       value="@(producto.Item.SellersItemIdentification == null ? producto.Item.StandardItemIdentification.ID.Value : producto.Item.SellersItemIdentification.ID.Value)"
-                                                                       data-original-sku="@(producto.Item.SellersItemIdentification == null ? producto.Item.StandardItemIdentification.ID.Value : producto.Item.SellersItemIdentification.ID.Value)"
-                                                                       placeholder="SKU del producto"
-                                                                       style="font-family: monospace; font-size: 0.875rem; min-width: 80px; max-width: 120px;">
-                                                            </td>
-                                                            <td>@producto.Item.Description[0].Value</td>
-                                                            <td class="text-end">
-                                                                @if(producto.InvoicedQuantity != null)
-                                                                {
-                                                                    <strong>@producto.InvoicedQuantity.Value.ToString("N2")</strong>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <span class="text-muted">-</span>
-                                                                }
-                                                            </td>
-                                                            <td>
-                                                                @if(producto.InvoicedQuantity != null && !string.IsNullOrEmpty(producto.InvoicedQuantity.unitCode))
-                                                                {
-                                                                    <code>@producto.InvoicedQuantity.unitCode</code>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <span class="text-muted">-</span>
-                                                                }
-                                                            </td>
-                                                            <td class="text-end">
-                                                                @if(producto.Price?.PriceAmount != null)
-                                                                {
-                                                                    <strong>$@producto.Price.PriceAmount.Value.ToString("N2")</strong>
-                                                                    <small class="text-muted">@producto.Price.PriceAmount.currencyID</small>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <span class="text-muted">-</span>
-                                                                }
-                                                            </td>
-                                                            <td class="text-end">
-                                                                <input type="text" 
-                                                                       class="form-control form-control-sm descuento-input" 
-                                                                       value="@(producto.AllowanceCharge != null && producto.AllowanceCharge.Length > 0 ? producto.AllowanceCharge.FirstOrDefault(ac => ac.ChargeIndicator?.Value == false)?.Amount?.Value.ToString("C2") : "$0.00")"
-                                                                       data-original-descuento="@(producto.AllowanceCharge != null && producto.AllowanceCharge.Length > 0 ? producto.AllowanceCharge.FirstOrDefault(ac => ac.ChargeIndicator?.Value == false)?.Amount?.Value.ToString("N2") : "0.00")"
-                                                                       placeholder="$0.00"
-                                                                       style="font-family: monospace; font-size: 0.875rem; min-width: 70px; max-width: 100px; text-align: right;">
-                                                            </td>
-                                                            <td class="text-end">
-                                                                @if(producto.LineExtensionAmount != null)
-                                                                {
-                                                                    <strong>$@producto.LineExtensionAmount.Value.ToString("N2")</strong>
-                                                                    <small class="text-muted">@producto.LineExtensionAmount.currencyID</small>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <span class="text-muted">-</span>
-                                                                }
-                                                            </td>
-                                                            <td class="text-center">
-                                                                @if(producto.TaxTotal != null && producto.TaxTotal.Length > 0)
-                                                                {
-                                                                    var ivaTax = producto.TaxTotal.FirstOrDefault(tax => 
-                                                                        tax.TaxSubtotal != null && 
-                                                                        tax.TaxSubtotal.Length > 0 && 
-                                                                        tax.TaxSubtotal.Any(subtotal => 
-                                                                            subtotal.TaxCategory?.TaxScheme?.ID?.Value == "01" || 
-                                                                            subtotal.TaxCategory?.TaxScheme?.ID?.Value == "02"));
-                                                                    if(ivaTax != null && ivaTax.TaxSubtotal.Length > 0)
-                                                                    {
-                                                                        var ivaSubtotal = ivaTax.TaxSubtotal.FirstOrDefault(subtotal => 
-                                                                            subtotal.TaxCategory?.TaxScheme?.ID?.Value == "01" || 
-                                                                            subtotal.TaxCategory?.TaxScheme?.ID?.Value == "02");
-                                                                        if(ivaSubtotal?.TaxCategory?.Percent?.Value != null && ivaSubtotal.TaxCategory.Percent.Value > 0)
-                                                                        {
-                                                                            <strong class="text-primary">@ivaSubtotal.TaxCategory.Percent.Value.ToString("N1")%</strong>
-                                                                        }
-                                                                        else
-                                                                        {
-                                                                            <span class="text-muted">-</span>
-                                                                        }
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <span class="text-muted">-</span>
-                                                                    }
-                                                                }
-                                                                else
-                                                                {
-                                                                    <span class="text-muted">-</span>
-                                                                }
-                                                            </td>
-                                                            <td class="text-center">
-                                                                @{
-                                                                    var otrosImpuestos = new List<string>();
-                                                                    
-                                                                    // Buscar otros impuestos en TaxTotal
-                                                                    if(producto.TaxTotal != null && producto.TaxTotal.Length > 0)
-                                                                    {
-                                                                        foreach(var tax in producto.TaxTotal)
-                                                                        {
-                                                                            if(tax.TaxSubtotal != null && tax.TaxSubtotal.Length > 0)
-                                                                            {
-                                                                                foreach(var subtotal in tax.TaxSubtotal)
-                                                                                {
-                                                                                    var taxSchemeId = subtotal.TaxCategory?.TaxScheme?.ID?.Value;
-                                                                                    var taxSchemeName = subtotal.TaxCategory?.TaxScheme?.Name?.Value;
-                                                                                    var taxPercent = subtotal.TaxCategory?.Percent?.Value;
-                                                                                    
-                                                                                    // Excluir IVA (01, 02) y buscar otros impuestos
-                                                                                    if(!string.IsNullOrEmpty(taxSchemeId) && 
-                                                                                       taxSchemeId != "01" && taxSchemeId != "02")
-                                                                                    {
-                                                                                        var impuestoInfo = "";
-                                                                                        
-                                                                                        // Mapear códigos de impuestos conocidos
-                                                                                        switch(taxSchemeId)
-                                                                                        {
-                                                                                            case "03": // INC
-                                                                                                impuestoInfo = $"INC {taxPercent?.ToString("N1")}%";
-                                                                                                break;
-                                                                                            case "04": // Impoconsumo
-                                                                                                impuestoInfo = $"Impoconsumo {taxPercent?.ToString("N1")}%";
-                                                                                                break;
-                                                                                            case "05": // Bolsa
-                                                                                                impuestoInfo = "Bolsa";
-                                                                                                break;
-                                                                                            case "06": // Licores
-                                                                                                impuestoInfo = $"Licores {taxPercent?.ToString("N1")}%";
-                                                                                                break;
-                                                                                            case "07": // Cigarrillos
-                                                                                                impuestoInfo = $"Cigarrillos {taxPercent?.ToString("N1")}%";
-                                                                                                break;
-                                                                                            case "08": // Retención
-                                                                                                impuestoInfo = $"Retención {taxPercent?.ToString("N1")}%";
-                                                                                                break;
-                                                                                            case "09": // Recargo
-                                                                                                impuestoInfo = $"Recargo {taxPercent?.ToString("N1")}%";
-                                                                                                break;
-                                                                                            default:
-                                                                                                // Para códigos no mapeados, usar el nombre del esquema si está disponible
-                                                                                                if(!string.IsNullOrEmpty(taxSchemeName))
-                                                                                                {
-                                                                                                    impuestoInfo = $"{taxSchemeName} {taxPercent?.ToString("N1")}%";
-                                                                                                }
-                                                                                                else
-                                                                                                {
-                                                                                                    impuestoInfo = $"Impuesto {taxSchemeId} {taxPercent?.ToString("N1")}%";
-                                                                                                }
-                                                                                                break;
-                                                                                        }
-                                                                                        
-                                                                                        if(!string.IsNullOrEmpty(impuestoInfo))
-                                                                                        {
-                                                                                            otrosImpuestos.Add(impuestoInfo);
-                                                                                        }
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    
-                                                                    // Buscar cargos adicionales en AllowanceCharge
-                                                                    if(producto.AllowanceCharge != null && producto.AllowanceCharge.Length > 0)
-                                                                    {
-                                                                        foreach(var charge in producto.AllowanceCharge)
-                                                                        {
-                                                                            // Solo cargos (ChargeIndicator = true), no descuentos
-                                                                            if(charge.ChargeIndicator?.Value == true)
-                                                                            {
-                                                                                var chargeReason = charge.AllowanceChargeReason?.FirstOrDefault()?.Value;
-                                                                                var chargeAmount = charge.Amount?.Value;
-                                                                                
-                                                                                if(!string.IsNullOrEmpty(chargeReason))
-                                                                                {
-                                                                                    var cargoInfo = $"{chargeReason}";
-                                                                                    if(chargeAmount.HasValue)
-                                                                                    {
-                                                                                        cargoInfo += $" ${chargeAmount.Value.ToString("N2")}";
-                                                                                    }
-                                                                                    otrosImpuestos.Add(cargoInfo);
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    
-                                                                    if(otrosImpuestos.Any())
-                                                                    {
-                                                                        <div class="small">
-                                                                            @foreach(var impuesto in otrosImpuestos)
-                                                                            {
-                                                                                <div class="text-info mb-1">
-                                                                                    <i class="fas fa-tag me-1"></i>
-                                                                                    <strong>@impuesto</strong>
-                                                                                </div>
-                                                                            }
-                                                                        </div>
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <span class="text-muted">-</span>
-                                                                    }
-                                                                }
-                                                            </td>
-                                                            <td class="text-end">
-                                                                @{
-                                                                    decimal totalLinea = 0;
-                                                                    string moneda = "";
-                                                                    
-                                                                    // Base: LineExtensionAmount (sin impuestos)
-                                                                    if(producto.LineExtensionAmount != null)
-                                                                    {
-                                                                        totalLinea += producto.LineExtensionAmount.Value;
-                                                                        moneda = producto.LineExtensionAmount.currencyID;
-                                                                    }
-                                                                    
-                                                                    // Sumar impuestos
-                                                                    if(producto.TaxTotal != null && producto.TaxTotal.Length > 0)
-                                                                    {
-                                                                        foreach(var tax in producto.TaxTotal)
-                                                                        {
-                                                                            if(tax.TaxAmount != null)
-                                                                            {
-                                                                                totalLinea += tax.TaxAmount.Value;
-                                                                                if(string.IsNullOrEmpty(moneda))
-                                                                                {
-                                                                                    moneda = tax.TaxAmount.currencyID;
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    
-                                                                    if(totalLinea > 0)
-                                                                    {
-                                                                        <strong>$@totalLinea.ToString("N2")</strong>
-                                                                        if(!string.IsNullOrEmpty(moneda))
-                                                                        {
-                                                                            <small class="text-muted">@moneda</small>
-                                                                        }
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <span class="text-muted">-</span>
-                                                                    }
-                                                                }
-                                                            </td>
-                                                        </tr>                        
-                                                    }
-                                                </tbody>
-                                            </table>
+                                <!-- Supplier Information -->
+                                <div class="col-md-4">
+                                    <div class="invoice-section">
+                                        <div class="section-title">Información del Proveedor (Vendedor)</div>
+                                        <div class="data-row">
+                                            <span class="data-label">Nombre:</span>
+                                            <span class="data-value">@factura.AccountingSupplierParty.Party.PartyName[0].Name.Value</span>
+                                        </div>
+                                        <div class="data-row">
+                                            <span class="data-label">NIT/RUT:</span>
+                                            <span class="data-value">
+                                                @if (factura.AccountingSupplierParty.Party.PartyTaxScheme != null && factura.AccountingSupplierParty.Party.PartyTaxScheme.Any())
+                                                {
+                                                    @factura.AccountingSupplierParty.Party.PartyTaxScheme[0].CompanyID.Value
+                                                }
+                                            </span>
+                                        </div>
+                                        <div class="data-row">
+                                            <span class="data-label">Dirección:</span>
+                                            <span class="data-value">
+                                                @if (factura.AccountingSupplierParty.Party.PostalAddress != null)
+                                                {
+                                                    @factura.AccountingSupplierParty.Party.PostalAddress.StreetName.Value
+                                                }
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Customer Information -->
+                                <div class="col-md-4">
+                                    <div class="invoice-section">
+                                        <div class="section-title">Información del Cliente (Comprador)</div>
+                                        <div class="data-row">
+                                            <span class="data-label">Nombre:</span>
+                                            <span class="data-value">@factura.AccountingCustomerParty.Party.PartyName[0].Name.Value</span>
+                                        </div>
+                                        <div class="data-row">
+                                            <span class="data-label">NIT/RUT:</span>
+                                            <span class="data-value">
+                                                @if (factura.AccountingCustomerParty.Party.PartyTaxScheme != null && factura.AccountingCustomerParty.Party.PartyTaxScheme.Any())
+                                                {
+                                                    @factura.AccountingCustomerParty.Party.PartyTaxScheme[0].CompanyID.Value
+                                                }
+                                            </span>
+                                        </div>
+                                        <div class="data-row">
+                                            <span class="data-label">Dirección:</span>
+                                            <span class="data-value">
+                                                @if (factura.AccountingCustomerParty.Party.PostalAddress != null)
+                                                {
+                                                    @factura.AccountingCustomerParty.Party.PostalAddress.StreetName.Value
+                                                }
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    <!-- Notes -->
-                    @if(factura.Note != null && factura.Note.Length > 0)
-                    {
-                        <div class="invoice-section">
-                            <div class="accordion" id="notesAccordion@(factura.ID.Value.Replace(" ", "").Replace("-", ""))">
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
-                                                data-bs-target="#notesCollapse@(factura.ID.Value.Replace(" ", "").Replace("-", ""))" 
-                                                aria-expanded="false" aria-controls="notesCollapse@(factura.ID.Value.Replace(" ", "").Replace("-", ""))">
-                                            <i class="fas fa-sticky-note me-2"></i>
-                                            Notas del Proveedor
-                                        </button>
-                                    </h2>
-                                    <div id="notesCollapse@(factura.ID.Value.Replace(" ", "").Replace("-", ""))" 
-                                         class="accordion-collapse collapse" 
-                                         data-bs-parent="#notesAccordion@(factura.ID.Value.Replace(" ", "").Replace("-", ""))">
-                                        <div class="accordion-body">
-                                            <div class="alert alert-info mb-0">
-                                                @foreach(var nota in factura.Note)
-                                                {
-                                                    @nota.Value
-                                                }
+                            <!-- Products Table -->
+                            <div class="row mt-4">
+                                <div class="col-12">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">
+                                                <i class="fas fa-boxes me-2"></i>
+                                                Productos de la Factura
+                                            </h6>
+                                        </div>
+                                        <div class="card-body p-0">
+                                                                                         <div class="table-responsive">
+                                                 <table id="productsCollapse@facturaId" class="table table-sm table-hover mb-0">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th class="text-center" style="width: 5%;">#</th>
+                                                            <th style="width: 15%;">SKU</th>
+                                                            <th style="width: 30%;">Descripción</th>
+                                                            <th class="text-center" style="width: 8%;">Cantidad</th>
+                                                            <th class="text-center" style="width: 8%;">Unidad</th>
+                                                            <th class="text-end" style="width: 10%;">Precio Unit.</th>
+                                                            <th class="text-end" style="width: 8%;">Descuento</th>
+                                                            <th class="text-center" style="width: 8%;">% IVA</th>
+                                                            <th class="text-end" style="width: 8%;">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @for(int productoIndex = 0; productoIndex < factura.InvoiceLine.Length; productoIndex++)
+                                                        {
+                                                            var producto = factura.InvoiceLine[productoIndex];
+                                                            var sku = GetSku(producto);
+                                                            var existeEnBD = SkuExisteEnBD(sku);
+                                                            var infoProductoBD = ObtenerInfoProductoBD(sku);
+                                                            var rowClass = existeEnBD ? "" : "table-danger";
+                                                            var inputClass = existeEnBD ? "form-control form-control-sm sku-input" : "form-control form-control-sm sku-input border-danger text-danger";
+                                                            
+                                                            <tr class="@rowClass">
+                                                                <td class="text-center">@(productoIndex + 1)</td>
+                                                                <td>
+                                                                    <input type="text" 
+                                                                           class="@inputClass" 
+                                                                           value="@sku"
+                                                                           data-original-sku="@sku"
+                                                                           placeholder="SKU del producto"
+                                                                           style="font-family: monospace; font-size: 0.875rem; min-width: 80px; max-width: 120px;"
+                                                                           title="@(existeEnBD ? "Producto encontrado en base de datos" : "Producto NO encontrado en base de datos")">
+                                                                    @if(!existeEnBD)
+                                                                    {
+                                                                        <small class="text-danger d-block mt-1">No encontrado en BD</small>
+                                                                    }
+                                                                </td>
+                                                                <td>
+                                                                    <div>
+                                                                        @producto.Item.Description[0].Value
+                                                                        @if(infoProductoBD != null && infoProductoBD.ExisteEnBaseDeDatos && !string.IsNullOrEmpty(infoProductoBD.DescripcionProducto))
+                                                                        {
+                                                                            <div class="producto-bd-info">
+                                                                                <small class="text-success d-block mt-1">
+                                                                                    <i class="fas fa-database me-1"></i>
+                                                                                    <strong>BD:</strong> @infoProductoBD.DescripcionProducto
+                                                                                </small>
+                                                                            </div>
+                                                                        }
+                                                                    </div>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    @producto.InvoicedQuantity.Value.ToString("N2")
+                                                                    <small class="text-muted d-block">@producto.InvoicedQuantity.unitCode</small>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    @producto.Item.StandardItemIdentification.ID.Value
+                                                                </td>
+                                                                <td class="text-end">
+                                                                    @if(producto.Price.PriceAmount != null)
+                                                                    {
+                                                                        <strong>$@producto.Price.PriceAmount.Value.ToString("N2")</strong>
+                                                                        <small class="text-muted">@producto.Price.PriceAmount.currencyID</small>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span class="text-muted">-</span>
+                                                                    }
+                                                                </td>
+                                                                <td class="text-end">
+                                                                    <input type="text" 
+                                                                           class="form-control form-control-sm discount-input" 
+                                                                           value="0"
+                                                                           placeholder="0.00"
+                                                                           style="font-family: monospace; font-size: 0.875rem; min-width: 60px; max-width: 80px;"
+                                                                           data-original-value="0">
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    @{
+                                                                        var ivaPorcentaje = 0m;
+                                                                        if(producto.TaxTotal != null && producto.TaxTotal.Any())
+                                                                        {
+                                                                            var ivaTax = producto.TaxTotal.FirstOrDefault(t => t.TaxSubtotal.Any(st => st.TaxCategory.TaxScheme.ID.Value == "01" || st.TaxCategory.TaxScheme.ID.Value == "02"));
+                                                                            if(ivaTax != null)
+                                                                            {
+                                                                                var ivaSubtotal = ivaTax.TaxSubtotal.FirstOrDefault(st => st.TaxCategory.TaxScheme.ID.Value == "01" || st.TaxCategory.TaxScheme.ID.Value == "02");
+                                                                                if(ivaSubtotal != null && ivaSubtotal.Percent != null)
+                                                                                {
+                                                                                    ivaPorcentaje = ivaSubtotal.Percent.Value;
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    @ivaPorcentaje.ToString("N0")%
+                                                                </td>
+                                                                <td class="text-end">
+                                                                    @{
+                                                                        decimal valorConIva = 0;
+                                                                        string monedaValorConIva = "";
+                                                                        
+                                                                        // Base: LineExtensionAmount (sin impuestos)
+                                                                        if(producto.LineExtensionAmount != null)
+                                                                        {
+                                                                            valorConIva += producto.LineExtensionAmount.Value;
+                                                                            monedaValorConIva = producto.LineExtensionAmount.currencyID;
+                                                                        }
+                                                                        
+                                                                        // Sumar IVA específicamente
+                                                                        if(producto.TaxTotal != null && producto.TaxTotal.Any())
+                                                                        {
+                                                                            var ivaTax = producto.TaxTotal.FirstOrDefault(t => t.TaxSubtotal.Any(st => st.TaxCategory.TaxScheme.ID.Value == "01" || st.TaxCategory.TaxScheme.ID.Value == "02"));
+                                                                            if(ivaTax != null)
+                                                                            {
+                                                                                var ivaSubtotal = ivaTax.TaxSubtotal.FirstOrDefault(st => st.TaxCategory.TaxScheme.ID.Value == "01" || st.TaxCategory.TaxScheme.ID.Value == "02");
+                                                                                if(ivaSubtotal != null && ivaSubtotal.TaxAmount != null)
+                                                                                {
+                                                                                    valorConIva += ivaSubtotal.TaxAmount.Value;
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    @if(valorConIva > 0)
+                                                                    {
+                                                                        <strong>$@valorConIva.ToString("N2")</strong>
+                                                                        @if(!string.IsNullOrEmpty(monedaValorConIva))
+                                                                        {
+                                                                            <small class="text-muted">@monedaValorConIva</small>
+                                                                        }
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span class="text-muted">-</span>
+                                                                    }
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    }
+                    </div>
                 </div>
             </div>
         }
-        
     }
 </div>
 
-<!-- Modal para visualizar documentos -->
-<div class="modal fade" id="documentModal" tabindex="-1" aria-labelledby="documentModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width: 95%; height: 90vh;">
-        <div class="modal-content" style="height: 100%;">
+<!-- Modal para visualizar archivos -->
+<div class="modal fade" id="archivoModal" tabindex="-1" aria-labelledby="archivoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="documentModalLabel">
-                    <i class="fas fa-file me-2"></i>
-                    <span id="documentTitle">Documento</span>
-                </h5>
+                <h5 class="modal-title" id="archivoModalLabel">Visualizar Archivo</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" style="height: calc(100% - 130px); padding: 0;">
-                <div id="documentContent" style="display: block; height: 100%;">
-                    <div id="documentFrame" style="width: 100%; height: 100%; border: none; overflow: hidden;"></div>
+            <div class="modal-body">
+                <div id="archivoContent" class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="fas fa-times me-2"></i>
-                    Cerrar
-                </button>
-                <button type="button" class="btn btn-primary" id="openInNewTab">
-                    <i class="fas fa-external-link-alt me-2"></i>
-                    Abrir en Nueva Pestaña
-                </button>
-                <button type="button" class="btn btn-success" id="downloadFile">
-                    <i class="fas fa-download me-2"></i>
-                    Descargar
-                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-primary" id="btnNuevaPestana">Abrir en Nueva Pestaña</button>
             </div>
         </div>
     </div>
@@ -571,330 +450,222 @@
 
 @section Scripts {
     <script>
-        let currentDocumentIndex = -1;
-        let currentDocumentUrl = '';
-        let currentDocumentType = '';
+        // Función para validar productos
+        function validarProductos(facturaIndex, facturaId) {
+            // Mostrar indicador de carga
+            const boton = event.target.closest('button');
+            const iconoOriginal = boton.innerHTML;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Validando...';
+            boton.disabled = true;
 
-        function visualizarEnModal(index, nombre) {
-            currentDocumentIndex = index;
-            currentDocumentUrl = `/Facturas/VisualizarAdjunto/${index}`;
-            currentDocumentType = getFileType(nombre);
+            // Obtener todos los SKUs de la factura
+            const skus = [];
+            const tablaProductos = document.querySelector(`#productsCollapse${facturaId} tbody`);
+            const filasProductos = tablaProductos.querySelectorAll('tr');
             
-            // Actualizar título del modal
-            document.getElementById('documentTitle').textContent = nombre;
-            
-            // Mostrar modal
-            const modal = new bootstrap.Modal(document.getElementById('documentModal'));
-            modal.show();
-            
-            // Cargar documento según el tipo
-            loadDocumentInModal(currentDocumentUrl, currentDocumentType);
-        }
-
-        function loadDocumentInModal(url, fileType) {
-            const iframe = document.getElementById('documentFrame');
-            
-            // Limpiar contenido anterior
-            iframe.innerHTML = '';
-            
-            if (fileType === 'pdf') {
-                // Para PDFs, usar iframe simple sin parámetros
-                const pdfUrl = url.replace('/VisualizarAdjunto/', '/VisualizarPDF/');
-                
-                // Crear iframe simple
-                const pdfIframe = document.createElement('iframe');
-                pdfIframe.src = pdfUrl;
-                pdfIframe.style.cssText = 'width: 100%; height: 100%; border: none; display: block; position: absolute; top: 0; left: 0; right: 0; bottom: 0;';
-                pdfIframe.setAttribute('frameborder', '0');
-                pdfIframe.setAttribute('allowfullscreen', 'true');
-                
-                // Limpiar y agregar el iframe
-                iframe.innerHTML = '';
-                iframe.appendChild(pdfIframe);
-                
-            } else if (fileType === 'image') {
-                // Para imágenes, usar img tag
-                iframe.innerHTML = `
-                    <img src="${url}" style="max-width: 100%; max-height: 100%; display: block; margin: 0 auto; object-fit: contain;" alt="Imagen">
-                `;
-            } else {
-                // Para otros archivos, usar iframe
-                iframe.innerHTML = `
-                    <iframe src="${url}" style="width: 100%; height: 100%; border: none;"></iframe>
-                `;
-            }
-        }
-
-        function getFileType(fileName) {
-            const extension = fileName.toLowerCase().split('.').pop();
-            if (extension === 'pdf') return 'pdf';
-            if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(extension)) return 'image';
-            return 'other';
-        }
-
-        function visualizarEnNuevaPestana(index) {
-            const resultado = @Html.Raw(Json.Serialize(Model));
-            if (resultado && resultado.esArchivoZip && resultado.archivosAdjuntos && resultado.archivosAdjuntos[index]) {
-                const archivo = resultado.archivosAdjuntos[index];
-                const fileType = getFileType(archivo.nombre);
-                
-                if (fileType === 'pdf') {
-                    // Para PDFs, usar el endpoint específico
-                    window.open(`/Facturas/VisualizarPDF/${index}`, '_blank');
-                } else {
-                    // Para otros archivos, usar el endpoint general
-                    window.open(`/Facturas/VisualizarAdjunto/${index}`, '_blank');
+            filasProductos.forEach(fila => {
+                const inputSku = fila.querySelector('.sku-input');
+                if (inputSku) {
+                    skus.push(inputSku.value.trim());
                 }
-            } else {
-                // Fallback al endpoint general
-                window.open(`/Facturas/VisualizarAdjunto/${index}`, '_blank');
+            });
+
+            if (skus.length === 0) {
+                mostrarNotificacion('No se encontraron productos para validar', 'warning');
+                boton.innerHTML = iconoOriginal;
+                boton.disabled = false;
+                return;
             }
+
+            // Realizar la validación mediante AJAX
+            fetch('/Facturas/ValidarProductos', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                },
+                body: JSON.stringify({
+                    facturaIndex: facturaIndex,
+                    skus: skus
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Error en la validación');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Actualizar la interfaz con los resultados
+                actualizarValidacionProductos(facturaIndex, data.validaciones, facturaId);
+                mostrarNotificacion(`Validación completada. ${data.validaciones.filter(v => v.existeEnBaseDeDatos).length} de ${data.validaciones.length} productos encontrados.`, 'success');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                mostrarNotificacion('Error al validar productos: ' + error.message, 'error');
+            })
+            .finally(() => {
+                // Restaurar el botón
+                boton.innerHTML = iconoOriginal;
+                boton.disabled = false;
+            });
         }
 
-        // Configurar botón "Abrir en Nueva Pestaña" del modal
-        document.getElementById('openInNewTab').addEventListener('click', function() {
-            if (currentDocumentUrl) {
-                window.open(currentDocumentUrl, '_blank');
-            }
-        });
-
-        // Configurar botón "Descargar" del modal
-        document.getElementById('downloadFile').addEventListener('click', function() {
-            if (currentDocumentUrl) {
-                const link = document.createElement('a');
-                link.href = currentDocumentUrl;
-                link.download = document.getElementById('documentTitle').textContent;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-        });
-
-        // Auto-expand first accordion if only one invoice
-        document.addEventListener('DOMContentLoaded', function() {
-            const invoices = document.querySelectorAll('.invoice-card');
-            if (invoices.length === 1) {
-                // Auto-expand products and notes for single invoice
-                const productsAccordion = document.querySelector('.accordion-button');
-                if (productsAccordion) {
-                    productsAccordion.classList.remove('collapsed');
-                    const target = productsAccordion.getAttribute('data-bs-target');
-                    const collapse = document.querySelector(target);
-                    if (collapse) {
-                        collapse.classList.add('show');
+        // Función para actualizar la interfaz con los resultados de validación
+        function actualizarValidacionProductos(facturaIndex, validaciones, facturaId) {
+            const tablaProductos = document.querySelector(`#productsCollapse${facturaId} tbody`);
+            const filasProductos = tablaProductos.querySelectorAll('tr');
+            
+            filasProductos.forEach((fila, index) => {
+                const inputSku = fila.querySelector('.sku-input');
+                if (inputSku) {
+                    const sku = inputSku.value.trim();
+                    const validacion = validaciones.find(v => v.sku === sku);
+                    
+                    if (validacion) {
+                        // Actualizar clases CSS
+                        fila.className = validacion.existeEnBaseDeDatos ? '' : 'table-danger';
+                        inputSku.className = validacion.existeEnBaseDeDatos ? 'form-control form-control-sm sku-input' : 'form-control form-control-sm sku-input border-danger text-danger';
+                        
+                        // Actualizar tooltip
+                        inputSku.title = validacion.existeEnBaseDeDatos ? 'Producto encontrado en base de datos' : 'Producto NO encontrado en base de datos';
+                        
+                        // Actualizar mensaje de error
+                        const errorMsg = fila.querySelector('.text-danger');
+                        if (errorMsg) {
+                            errorMsg.textContent = validacion.existeEnBaseDeDatos ? '' : 'No encontrado en BD';
+                        }
+                        
+                        // Actualizar información del producto en BD
+                        const productoBdInfo = fila.querySelector('.producto-bd-info');
+                        const nombreProductoBd = fila.querySelector('.nombre-producto-bd');
+                        
+                        if (validacion.existeEnBaseDeDatos && validacion.descripcionProducto) {
+                            if (productoBdInfo) {
+                                productoBdInfo.style.display = 'block';
+                            }
+                            if (nombreProductoBd) {
+                                nombreProductoBd.textContent = validacion.descripcionProducto;
+                            }
+                        } else {
+                            if (productoBdInfo) {
+                                productoBdInfo.style.display = 'none';
+                            }
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
 
+        // Función para visualizar archivo en modal
+        function visualizarEnModal(index, nombre) {
+            const modal = new bootstrap.Modal(document.getElementById('archivoModal'));
+            const modalTitle = document.getElementById('archivoModalLabel');
+            const modalContent = document.getElementById('archivoContent');
+            const btnNuevaPestana = document.getElementById('btnNuevaPestana');
+            
+            modalTitle.textContent = `Visualizar: ${nombre}`;
+            modalContent.innerHTML = '<div class="spinner-border" role="status"><span class="visually-hidden">Cargando...</span></div>';
+            
+            // Cargar el archivo
+            fetch(`/Facturas/ObtenerArchivoAdjunto?index=${index}`)
+                .then(response => response.blob())
+                .then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const extension = nombre.split('.').pop().toLowerCase();
+                    
+                    let content = '';
+                    if (extension === 'pdf') {
+                        content = `<embed src="${url}" type="application/pdf" width="100%" height="600px">`;
+                    } else if (['jpg', 'jpeg', 'png', 'gif'].includes(extension)) {
+                        content = `<img src="${url}" class="img-fluid" alt="${nombre}">`;
+                    } else {
+                        content = `<div class="alert alert-info">Este tipo de archivo no se puede visualizar directamente. <a href="${url}" target="_blank" class="btn btn-primary btn-sm">Descargar</a></div>`;
+                    }
+                    
+                    modalContent.innerHTML = content;
+                    btnNuevaPestana.onclick = () => window.open(url, '_blank');
+                })
+                .catch(error => {
+                    modalContent.innerHTML = '<div class="alert alert-danger">Error al cargar el archivo</div>';
+                });
+            
+            modal.show();
+        }
+
+        // Función para visualizar archivo en nueva pestaña
+        function visualizarEnNuevaPestana(index) {
+            window.open(`/Facturas/ObtenerArchivoAdjunto?index=${index}`, '_blank');
+        }
+
+        // Función para mostrar notificaciones
         function mostrarNotificacion(mensaje, tipo) {
-            // Crear notificación Bootstrap
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${tipo} alert-dismissible fade show position-fixed`;
-            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-            alertDiv.innerHTML = `
-                ${mensaje}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            const alertClass = tipo === 'error' ? 'alert-danger' : tipo === 'warning' ? 'alert-warning' : 'alert-success';
+            const alertHtml = `
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    ${mensaje}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
             `;
             
-            document.body.appendChild(alertDiv);
-            
-            // Auto-remover después de 3 segundos
-            setTimeout(() => {
-                if (alertDiv.parentNode) {
-                    alertDiv.remove();
-                }
-            }, 3000);
-        }
-
-        // Funcionalidad para edición de SKUs y Descuentos
-        document.addEventListener('DOMContentLoaded', function() {
-            const skuInputs = document.querySelectorAll('.sku-input');
-            const descuentoInputs = document.querySelectorAll('.descuento-input');
-            
-            // Función para calcular el ancho basado en el texto
-            function ajustarAnchoInput(input) {
-                const texto = input.value || input.placeholder;
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                context.font = '0.875rem monospace';
-                const anchoTexto = context.measureText(texto).width;
-                
-                // Agregar padding (izquierda + derecha) y un poco de espacio extra
-                const anchoTotal = anchoTexto + 20;
-                const anchoMinimo = 80;
-                const anchoMaximo = 120;
-                
-                input.style.width = Math.max(anchoMinimo, Math.min(anchoMaximo, anchoTotal)) + 'px';
+            // Crear contenedor de notificaciones si no existe
+            let notificacionesContainer = document.getElementById('notificaciones');
+            if (!notificacionesContainer) {
+                notificacionesContainer = document.createElement('div');
+                notificacionesContainer.id = 'notificaciones';
+                notificacionesContainer.style.position = 'fixed';
+                notificacionesContainer.style.top = '20px';
+                notificacionesContainer.style.right = '20px';
+                notificacionesContainer.style.zIndex = '9999';
+                document.body.appendChild(notificacionesContainer);
             }
             
-            // Configurar inputs de SKU
-            skuInputs.forEach(input => {
-                // Ajustar ancho inicial
-                ajustarAnchoInput(input);
-                
-                // Ajustar ancho cuando cambie el contenido
-                input.addEventListener('input', function() {
-                    ajustarAnchoInput(this);
-                    
-                    const originalSku = this.getAttribute('data-original-sku');
-                    const currentValue = this.value.trim();
-                    
-                    if (currentValue !== originalSku) {
-                        this.classList.add('is-modified');
-                        this.style.backgroundColor = '#fff3cd';
-                        this.style.borderColor = '#ffc107';
-                    } else {
-                        this.classList.remove('is-modified');
-                        this.style.backgroundColor = '';
-                        this.style.borderColor = '';
-                    }
-                });
-
-                // Validar al perder el foco
-                input.addEventListener('blur', function() {
-                    const value = this.value.trim();
-                    
-                    if (value === '') {
-                        this.style.backgroundColor = '#f8d7da';
-                        this.style.borderColor = '#dc3545';
-                        mostrarNotificacion('El SKU no puede estar vacío', 'warning');
-                    } else if (value.length < 3) {
-                        this.style.backgroundColor = '#f8d7da';
-                        this.style.borderColor = '#dc3545';
-                        mostrarNotificacion('El SKU debe tener al menos 3 caracteres', 'warning');
-                    } else {
-                        // Restaurar estilo si es válido
-                        if (!this.classList.contains('is-modified')) {
-                            this.style.backgroundColor = '';
-                            this.style.borderColor = '';
-                        }
-                    }
-                });
-
-                // Permitir Enter para guardar
-                input.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        this.blur();
-                        mostrarNotificacion('SKU actualizado', 'success');
-                    }
-                });
-            });
+            // Agregar notificación
+            const alertElement = document.createElement('div');
+            alertElement.innerHTML = alertHtml;
+            notificacionesContainer.appendChild(alertElement.firstElementChild);
             
-            // Configurar inputs de Descuento con máscara de moneda
-            descuentoInputs.forEach(input => {
-                // Función para formatear a moneda
-                function formatearMoneda(valor) {
-                    const numero = parseFloat(valor) || 0;
-                    return numero.toLocaleString('es-CO', {
-                        style: 'currency',
-                        currency: 'COP',
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    });
+            // Auto-remover después de 5 segundos
+            setTimeout(() => {
+                const alert = notificacionesContainer.querySelector('.alert');
+                if (alert) {
+                    alert.remove();
                 }
-                
-                // Función para extraer solo números del valor formateado
-                function extraerNumero(valor) {
-                    return parseFloat(valor.replace(/[^\d.-]/g, '')) || 0;
-                }
-                
-                // Función para ajustar ancho basado en el contenido
-                function ajustarAnchoMoneda(input) {
-                    const texto = input.value || input.placeholder;
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    context.font = '0.875rem monospace';
-                    const anchoTexto = context.measureText(texto).width;
-                    
-                    // Agregar padding y espacio extra
-                    const anchoTotal = anchoTexto + 25;
-                    const anchoMinimo = 70;
-                    const anchoMaximo = 120;
-                    
-                    input.style.width = Math.max(anchoMinimo, Math.min(anchoMaximo, anchoTotal)) + 'px';
-                }
-                
-                // Formatear valor inicial
-                const valorInicial = extraerNumero(input.value);
-                input.value = formatearMoneda(valorInicial);
-                ajustarAnchoMoneda(input);
-                
-                // Manejar entrada de texto
-                input.addEventListener('input', function(e) {
-                    let valor = this.value;
-                    
-                    // Permitir solo números, punto, coma y símbolos de moneda
-                    valor = valor.replace(/[^\d.,]/g, '');
-                    
-                    // Convertir coma a punto para cálculos
-                    valor = valor.replace(',', '.');
-                    
-                    // Limitar a 2 decimales
-                    if (valor.includes('.')) {
-                        const partes = valor.split('.');
-                        if (partes[1].length > 2) {
-                            valor = partes[0] + '.' + partes[1].substring(0, 2);
-                        }
-                    }
-                    
-                    // Convertir a número y formatear
-                    const numero = parseFloat(valor) || 0;
-                    this.value = formatearMoneda(numero);
-                    
-                    // Ajustar ancho
-                    ajustarAnchoMoneda(this);
-                    
-                    // Verificar si ha cambiado del valor original
-                    const originalDescuento = parseFloat(this.getAttribute('data-original-descuento')) || 0;
-                    
-                    if (Math.abs(numero - originalDescuento) > 0.01) {
-                        this.classList.add('is-modified');
-                        this.style.backgroundColor = '#fff3cd';
-                        this.style.borderColor = '#ffc107';
-                    } else {
-                        this.classList.remove('is-modified');
-                        this.style.backgroundColor = '';
-                        this.style.borderColor = '';
-                    }
-                });
+            }, 5000);
+        }
 
-                // Validar y formatear al perder el foco
-                input.addEventListener('blur', function() {
-                    let numero = extraerNumero(this.value);
-                    
-                    // Validar que no sea negativo
-                    if (numero < 0) {
-                        numero = 0;
-                        this.style.backgroundColor = '#f8d7da';
-                        this.style.borderColor = '#dc3545';
-                        mostrarNotificacion('El descuento no puede ser negativo', 'warning');
-                    } else {
-                        // Restaurar estilo si es válido
-                        if (!this.classList.contains('is-modified')) {
-                            this.style.backgroundColor = '';
-                            this.style.borderColor = '';
-                        }
-                    }
-                    
-                    // Formatear a moneda
-                    this.value = formatearMoneda(numero);
-                    ajustarAnchoMoneda(this);
-                });
+        // Ajustar ancho de inputs SKU dinámicamente
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('sku-input')) {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                context.font = window.getComputedStyle(e.target).font;
+                const textWidth = context.measureText(e.target.value).width;
+                const minWidth = 80;
+                const maxWidth = 120;
+                const newWidth = Math.max(minWidth, Math.min(maxWidth, textWidth + 20));
+                e.target.style.width = newWidth + 'px';
+            }
+        });
 
-                // Permitir Enter para guardar
-                input.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        this.blur();
-                        mostrarNotificacion('Descuento actualizado', 'success');
-                    }
-                });
+        // Aplicar máscara de moneda a inputs de descuento
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('discount-input')) {
+                let value = e.target.value.replace(/[^\d.,]/g, '');
+                value = value.replace(',', '.');
+                const numValue = parseFloat(value) || 0;
+                e.target.value = numValue.toFixed(2);
                 
-                // Manejar foco para seleccionar todo el texto
-                input.addEventListener('focus', function() {
-                    this.select();
-                });
-            });
+                // Ajustar ancho dinámicamente
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                context.font = window.getComputedStyle(e.target).font;
+                const textWidth = context.measureText(e.target.value).width;
+                const minWidth = 60;
+                const maxWidth = 80;
+                const newWidth = Math.max(minWidth, Math.min(maxWidth, textWidth + 20));
+                e.target.style.width = newWidth + 'px';
+            }
         });
     </script>
-}
+} 

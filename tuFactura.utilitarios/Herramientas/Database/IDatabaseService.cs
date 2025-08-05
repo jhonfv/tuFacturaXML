@@ -15,5 +15,11 @@ namespace tuFactura.utilitarios.Herramientas.Database
         Task<List<XEntradaDeMercanciaDetalle>> GetEntradaMercanciaDetallesAsync(int entradaId);
         Task<bool> UpdateEntradaMercanciaAsync(XEntradaDeMercancia entrada);
         Task<bool> DeleteEntradaMercanciaAsync(int entradaId);
+        
+        // Métodos para validación de productos
+        Task<List<ValidacionProducto>> ValidarProductosAsync(List<string> skus);
+        Task<Producto?> GetProductoByReferenciaAsync(string referencia);
+        Task<ProductoAlterno?> GetProductoAlternoByCodigoAsync(string codigoAlterno);
+        Task<List<ProductoAlterno>> GetProductosAlternosByProductoIdAsync(int productoId);
     }
 } 
