@@ -156,7 +156,7 @@
             
             <div class="row mb-4">
                 <div class="col-12">
-                    <div class="card">
+                    <div class="card" data-factura-id="@facturaId">
                         <div class="card-header">
                             <div class="d-flex justify-content-between align-items-center">
                                 <h5 class="mb-0">
@@ -172,7 +172,7 @@
                                     <form method="post" action="@Url.Action("ProcesarEntradaMercancia", "Facturas")" style="display: inline;">
                                         @Html.AntiForgeryToken()
                                         <input type="hidden" name="facturaIndex" value="@facturaIndex" />
-                                        <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('¿Desea procesar esta factura como entrada de mercancía?')">
+                                        <button type="submit" class="btn btn-success btn-sm" data-factura-id="@facturaId" onclick="return confirm('¿Desea procesar esta factura como entrada de mercancía?')">
                                             <i class="fas fa-truck me-1"></i>
                                             Procesar Entrada
                                         </button>
@@ -575,7 +575,45 @@
 
 @section Scripts {
     <script>
-                 // Función para validar productos
+        // Función para verificar si todos los productos están validados
+        function verificarValidacionCompleta(facturaId) {
+            const tablaProductos = document.querySelector(`#productsCollapse${facturaId} tbody`);
+            if (!tablaProductos) return false;
+            
+            const filasProductos = tablaProductos.querySelectorAll('tr');
+            let todosValidados = true;
+            
+            filasProductos.forEach(fila => {
+                const inputSku = fila.querySelector('.sku-input');
+                if (inputSku && inputSku.value.trim() !== '') {
+                    // Verificar si la fila tiene clase table-danger (producto no encontrado)
+                    if (fila.classList.contains('table-danger')) {
+                        todosValidados = false;
+                    }
+                    // Verificar si el input tiene clase border-danger (producto no encontrado)
+                    if (inputSku.classList.contains('border-danger')) {
+                        todosValidados = false;
+                    }
+                }
+            });
+            
+            // Habilitar o deshabilitar el botón de "Procesar Entrada"
+            const botonProcesar = document.querySelector(`button[data-factura-id="${facturaId}"]`);
+            if (botonProcesar) {
+                botonProcesar.disabled = !todosValidados;
+                if (todosValidados) {
+                    botonProcesar.className = 'btn btn-success btn-sm';
+                    botonProcesar.title = 'Todos los productos están validados';
+                } else {
+                    botonProcesar.className = 'btn btn-secondary btn-sm';
+                    botonProcesar.title = 'Debe validar todos los productos antes de procesar la entrada';
+                }
+            }
+            
+            return todosValidados;
+        }
+
+        // Función para validar productos
          function validarProductos(facturaIndex, facturaId) {
              // Mostrar indicador de carga
              const boton = event.target.closest('button');
@@ -712,6 +750,9 @@
                      }
                  }
              });
+             
+             // Verificar si todos los productos están validados después de la actualización
+             verificarValidacionCompleta(facturaId);
          }
 
          // Función para validar un SKU individual cuando se edita
@@ -740,6 +781,13 @@
              if (errorMsg) {
                  errorMsg.textContent = 'Modificado - Validar';
                  errorMsg.className = 'text-warning d-block mt-1';
+             }
+             
+             // Verificar validación completa después de modificar el SKU
+             const facturaCard = inputSku.closest('.card');
+             const facturaId = facturaCard.getAttribute('data-factura-id') || facturaCard.querySelector('[data-factura-id]')?.getAttribute('data-factura-id');
+             if (facturaId) {
+                 verificarValidacionCompleta(facturaId);
              }
          }
 
