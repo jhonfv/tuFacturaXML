@@ -742,3 +742,29 @@ body {
 .text-danger {
     color: #dc3545 !important;
 }
+
+/* Estilos para los íconos de impuestos */
+.impuestos-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.impuesto-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.impuesto-icon {
+  color: #3b82f6;
+  font-size: 0.625rem;
+  font-weight: bold;
+}
+
+.impuesto-text {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}

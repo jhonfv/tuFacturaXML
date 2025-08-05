@@ -7,7 +7,6 @@ namespace tuFactura.utilitarios.Herramientas.Database
 {
     public interface IDatabaseService
     {
-        Task<bool> TestConnectionAsync();
         Task<int> InsertEntradaMercanciaAsync(XEntradaDeMercancia entrada);
         Task<bool> InsertEntradaMercanciaDetalleAsync(XEntradaDeMercanciaDetalle detalle);
         Task<List<XEntradaDeMercancia>> GetEntradasMercanciaAsync();
@@ -18,8 +17,5 @@ namespace tuFactura.utilitarios.Herramientas.Database
         
         // Métodos para validación de productos
         Task<List<ValidacionProducto>> ValidarProductosAsync(List<string> skus);
-        Task<Producto?> GetProductoByReferenciaAsync(string referencia);
-        Task<ProductoAlterno?> GetProductoAlternoByCodigoAsync(string codigoAlterno);
-        Task<List<ProductoAlterno>> GetProductosAlternosByProductoIdAsync(int productoId);
     }
 } 
